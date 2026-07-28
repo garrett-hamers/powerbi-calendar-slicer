@@ -148,7 +148,7 @@ class HeatmapCard extends FormattingSettingsCard {
         name: "show",
         displayName: "Heat-shade Days",
         displayNameKey: "Heatmap_Show",
-        description: "Colour each day by the Values measure. Binding a measure may disable slicer sync across pages.",
+        description: "Colour each day by the Values measure. Note: enabling this binds a second field, which disables Power BI Sync slicers for this visual.",
         descriptionKey: "Heatmap_Show_Desc",
         value: false
     });

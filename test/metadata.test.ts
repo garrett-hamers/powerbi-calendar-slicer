@@ -200,6 +200,20 @@ describe("submission metadata", () => {
         }
     });
 
+    it("pins the FilterAction workaround to the correct enum values", () => {
+        const visualSource = readFileSync(resolve(process.cwd(), "src/visual.ts"), "utf8");
+        // The ambient const enum is not inlined by esbuild, so the values are
+        // pinned as strict literal-member types. Lock both the names (fleet
+        // convention) and the values so the workaround can't silently rot or be
+        // "simplified" back into a broken `import { FilterAction }`.
+        expect(visualSource).toMatch(/MERGE_FILTER_ACTION:\s*powerbi\.FilterAction\.merge\s*=\s*0/);
+        expect(visualSource).toMatch(/REMOVE_FILTER_ACTION:\s*powerbi\.FilterAction\.remove\s*=\s*1/);
+        const visualCode = visualSource
+            .replace(/\/\*[\s\S]*?\*\//g, "")
+            .replace(/\/\/[^\n]*/g, "");
+        expect(visualCode).not.toMatch(/import\s*\{[^}]*\bFilterAction\b[^}]*\}/);
+    });
+
     it("does not contain any hosted CI/CD configuration", () => {
         const forbidden = [
             ".github/workflows",

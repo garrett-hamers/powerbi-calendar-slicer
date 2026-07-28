@@ -45,11 +45,20 @@ type Selection =
     | { type: "days"; days: Date[] };
 
 // FilterAction is an ambient const enum in the API typings (merge = 0,
-// remove = 1). Bundlers that do not inline ambient .d.ts const enums would
-// otherwise leave a runtime reference to an undefined object, so the values are
-// pinned here as typed literals.
-const FILTER_ACTION_MERGE = 0 as powerbi.FilterAction;
-const FILTER_ACTION_REMOVE = 1 as powerbi.FilterAction;
+// remove = 1). esbuild (and other bundlers that do not inline ambient .d.ts
+// const enums) would otherwise leave a runtime reference to an undefined
+// object, so the values are pinned here as typed literals. Do NOT "simplify"
+// this back into `import { FilterAction }` — that breaks at test/runtime. The
+// literal-member types (`.merge`/`.remove`) fail compilation if the values
+// ever drift from the API. Matches the fleet convention (radar/gantt).
+const MERGE_FILTER_ACTION: powerbi.FilterAction.merge = 0;
+const REMOVE_FILTER_ACTION: powerbi.FilterAction.remove = 1;
+
+// Must match the categorical `top` count in capabilities.json. When the
+// received category reaches this length the table may have been truncated, so
+// data-completeness features (e.g. "grey days without data") are suppressed to
+// avoid mislabelling real days as empty.
+const DATA_REDUCTION_COUNT = 30000;
 
 interface VisibleMonth {
     year: number;
@@ -78,6 +87,11 @@ export class Visual implements IVisual {
     private valueMin = 0;
     private valueMax = 0;
     private hasValues = false;
+    /**
+     * True when the inbound category hit the capabilities data-reduction cap,
+     * so the received dates may be an incomplete subset of the real table.
+     */
+    private dataTruncated = false;
 
     private selection: Selection = { type: "none" };
     private activePreset: string | null = null;
@@ -196,11 +210,13 @@ export class Visual implements IVisual {
         this.dataValues = new Map<string, number>();
         this.hasValues = false;
 
+        const raws = category.values || [];
+        this.dataTruncated = raws.length >= DATA_REDUCTION_COUNT;
+
         const values = dataView?.categorical?.values?.[0];
         const measures = values?.values;
         this.hasValues = Array.isArray(measures) && measures.length > 0;
 
-        const raws = category.values || [];
         for (let i = 0; i < raws.length; i++) {
             const date = this.coerceDate(raws[i]);
             if (!date) {
@@ -382,7 +398,7 @@ export class Visual implements IVisual {
             return;
         }
         if (this.selection.type === "none") {
-            this.host.applyJsonFilter(null, "general", "filter", FILTER_ACTION_REMOVE);
+            this.host.applyJsonFilter(null, "general", "filter", REMOVE_FILTER_ACTION);
             return;
         }
         if (this.selection.type === "range") {
@@ -391,17 +407,17 @@ export class Visual implements IVisual {
                 addDays(this.selection.end, 1),
                 this.filterTarget
             );
-            this.host.applyJsonFilter(filter, "general", "filter", FILTER_ACTION_MERGE);
+            this.host.applyJsonFilter(filter, "general", "filter", MERGE_FILTER_ACTION);
             return;
         }
         // days
         if (this.selection.days.length === 1) {
             const filter = buildDayFilter(this.selection.days[0], this.filterTarget);
-            this.host.applyJsonFilter(filter, "general", "filter", FILTER_ACTION_MERGE);
+            this.host.applyJsonFilter(filter, "general", "filter", MERGE_FILTER_ACTION);
             return;
         }
         const multi = buildMultiDayFilter(this.selection.days, this.filterTarget);
-        this.host.applyJsonFilter(multi, "general", "filter", FILTER_ACTION_MERGE);
+        this.host.applyJsonFilter(multi, "general", "filter", MERGE_FILTER_ACTION);
     }
 
     private clearSelection(): void {
@@ -437,7 +453,7 @@ export class Visual implements IVisual {
         this.dragAnchor = result.start;
         this.focusedDate = result.start;
         this.moveVisibleTo(result.start);
-        this.host.applyJsonFilter(result.filter, "general", "filter", FILTER_ACTION_MERGE);
+        this.host.applyJsonFilter(result.filter, "general", "filter", MERGE_FILTER_ACTION);
         this.persistVisibleMonth();
         this.renderCalendar();
     }
@@ -846,7 +862,7 @@ export class Visual implements IVisual {
             );
         }
 
-        const noData = heatmap.datesWithDataOnly.value && this.hasValues && !hasData;
+        const noData = heatmap.datesWithDataOnly.value && this.hasValues && !hasData && !this.dataTruncated;
         if (noData) {
             day.classList.add("no-data");
             day.setAttribute("aria-disabled", "true");

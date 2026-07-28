@@ -27,7 +27,7 @@
     "Cells_WeekendColor": "Weekend Colour",
 
     "Heatmap_Show": "Heat-shade Days",
-    "Heatmap_Show_Desc": "Colour each day by the Values measure. Binding a measure may disable slicer sync across pages.",
+    "Heatmap_Show_Desc": "Colour each day by the Values measure. Note: enabling this binds a second field, which disables Power BI Sync slicers for this visual.",
     "Heatmap_MinColor": "Low Colour",
     "Heatmap_MaxColor": "High Colour",
     "Heatmap_DatesWithDataOnly": "Grey Days Without Data",

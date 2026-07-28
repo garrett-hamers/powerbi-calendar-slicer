@@ -221,6 +221,51 @@ describe("Atlyn Calendar Slicer visual", () => {
         expect(withoutData!.getAttribute("aria-disabled")).toBe("true");
     });
 
+    it("does not grey empty days when the category hit the data-reduction cap", () => {
+        const { visual, element } = createVisual();
+        // Exactly the capabilities `top` count => the table may be truncated,
+        // so we cannot trust that a missing day is genuinely empty.
+        const CAP = 30000;
+        const dates: Date[] = new Array(CAP).fill(0).map(() => new Date(2024, 2, 15));
+        const values: number[] = new Array(CAP).fill(1);
+        visual.update(updateOptions(buildMockDataView({
+            dates,
+            values,
+            objects: { heatmap: { datesWithDataOnly: true } }
+        })));
+
+        // March 10 has no data, but because the dataView is truncated it must
+        // NOT be mislabelled as empty.
+        const day10 = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-10']");
+        expect(day10).not.toBeNull();
+        expect(day10!.classList.contains("no-data")).toBe(false);
+        expect(day10!.getAttribute("aria-disabled")).toBeNull();
+    });
+
+    it("greys empty days when the category is comfortably below the cap", () => {
+        const { visual, element } = createVisual();
+        // A full month of daily rows is well under the 30000 cap, so the
+        // received dates are complete and greying is trustworthy.
+        const dates: Date[] = [];
+        const values: number[] = [];
+        for (let d = 1; d <= 28; d++) {
+            if (d === 10) {
+                continue;
+            }
+            dates.push(new Date(2024, 2, d));
+            values.push(d);
+        }
+        visual.update(updateOptions(buildMockDataView({
+            dates,
+            values,
+            objects: { heatmap: { datesWithDataOnly: true } }
+        })));
+
+        const day10 = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-10']");
+        expect(day10!.classList.contains("no-data")).toBe(true);
+        expect(day10!.getAttribute("aria-disabled")).toBe("true");
+    });
+
     it("renders multiple month grids when monthsToShow > 1", () => {
         const { visual, element } = createVisual();
         visual.update(updateOptions(buildMockDataView({
