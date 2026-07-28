@@ -25,7 +25,11 @@ function createHost() {
     const persisted: unknown[] = [];
     const host = {
         locale: "en-US",
-        colorPalette: { isHighContrast: false },
+        colorPalette: {
+            isHighContrast: false,
+            foreground: { value: "#ffffff" },
+            background: { value: "#000000" }
+        },
         eventService: {
             renderingStarted: vi.fn(),
             renderingFinished: vi.fn(),
@@ -58,7 +62,7 @@ function createVisual() {
     document.body.appendChild(element);
     const { host, applied, persisted } = createHost();
     const visual = new Visual({ element, host } as unknown as VisualConstructorOptions);
-    return { visual, element, applied, persisted };
+    return { visual, element, applied, persisted, host };
 }
 
 function updateOptions(dataView: unknown, jsonFilters: unknown[] = []) {
@@ -264,6 +268,63 @@ describe("Atlyn Calendar Slicer visual", () => {
         const day10 = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-10']");
         expect(day10!.classList.contains("no-data")).toBe(true);
         expect(day10!.getAttribute("aria-disabled")).toBe("true");
+    });
+
+    it("reacts to a high-contrast toggle between updates (no stale theme state)", () => {
+        const { visual, element, host } = createVisual();
+        const dates = [new Date(2024, 2, 15)];
+
+        // First update: normal theme -> a selected cell gets an inline colour.
+        visual.update(updateOptions(buildMockDataView({ dates })));
+        expect(element.querySelector(".atlynCalendarSlicer")?.classList.contains("high-contrast"))
+            .toBe(false);
+
+        // Author flips Windows high contrast while the report is open.
+        host.colorPalette.isHighContrast = true;
+        visual.update(updateOptions(buildMockDataView({ dates })));
+
+        const root = element.querySelector<HTMLElement>(".atlynCalendarSlicer")!;
+        expect(root.classList.contains("high-contrast")).toBe(true);
+        // High-contrast suppresses inline header colours (theme-driven instead).
+        const header = element.querySelector<HTMLElement>(".cs-grid thead th:not(.cs-week-number)")!;
+        expect(header.style.color).toBe("");
+
+        // And back again — the value must not be stuck on.
+        host.colorPalette.isHighContrast = false;
+        visual.update(updateOptions(buildMockDataView({ dates })));
+        expect(element.querySelector(".atlynCalendarSlicer")?.classList.contains("high-contrast"))
+            .toBe(false);
+    });
+
+    it("renders read-only and applies no filter when host interactions are disabled", () => {
+        const { visual, element, host, applied } = createVisual();
+        host.hostCapabilities = { allowInteractions: false };
+        visual.update(updateOptions(buildMockDataView({ dates: [new Date(2024, 2, 15)] })));
+
+        const root = element.querySelector<HTMLElement>(".atlynCalendarSlicer")!;
+        expect(root.classList.contains("read-only")).toBe(true);
+
+        // No cell is tabbable in read-only mode.
+        expect(element.querySelectorAll(".cs-day[tabindex='0']").length).toBe(0);
+        // Toolbar/preset buttons are disabled.
+        const buttons = element.querySelectorAll<HTMLButtonElement>("button.cs-btn");
+        expect(buttons.length).toBeGreaterThan(0);
+        buttons.forEach((b) => expect(b.disabled).toBe(true));
+
+        // A click must not produce a filter.
+        const cell = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-15']")!;
+        cell.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+        const root2 = element.firstElementChild as HTMLElement;
+        root2.dispatchEvent(new Event("pointerup", { bubbles: true }));
+        expect(applied.length).toBe(0);
+    });
+
+    it("is interactive by default when hostCapabilities is absent", () => {
+        const { visual, element } = createVisual();
+        visual.update(updateOptions(buildMockDataView({ dates: [new Date(2024, 2, 15)] })));
+        const root = element.querySelector<HTMLElement>(".atlynCalendarSlicer")!;
+        expect(root.classList.contains("read-only")).toBe(false);
+        expect(element.querySelectorAll(".cs-day[tabindex='0']").length).toBe(1);
     });
 
     it("renders multiple month grids when monthsToShow > 1", () => {

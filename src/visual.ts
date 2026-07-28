@@ -74,9 +74,20 @@ export class Visual implements IVisual {
     private readonly formattingSettingsService: FormattingSettingsService;
     private formattingSettings: VisualFormattingSettingsModel;
 
-    private readonly isHighContrast: boolean;
-    private readonly hcForeground: string;
-    private readonly hcBackground: string;
+    /**
+     * Theme-derived state. Resolved live on every {@link update} (never cached
+     * across updates) so the visual reacts to report-theme swaps and Windows
+     * high-contrast toggles without waiting to be recreated.
+     */
+    private isHighContrast = false;
+    private hcForeground = "#000000";
+    private hcBackground = "#ffffff";
+    /**
+     * False in non-interactive host contexts (PowerPoint export, email
+     * subscriptions). When false the slicer renders read-only: no click/drag/
+     * keyboard filtering, no focusable cells, no hover affordances.
+     */
+    private interactive = true;
     private readonly locale: string;
 
     private filterTarget: FilterTarget | null = null;
@@ -112,6 +123,22 @@ export class Visual implements IVisual {
             new FormattingSettingsService(this.localizationManager);
         this.formattingSettings = new VisualFormattingSettingsModel();
 
+        this.root = document.createElement("div");
+        this.root.className = "atlynCalendarSlicer";
+        this.target.appendChild(this.root);
+
+        // End any drag even if the pointer is released outside a day cell.
+        this.root.addEventListener("pointerup", () => this.endDrag());
+        this.root.addEventListener("pointerleave", () => this.endDrag());
+    }
+
+    /**
+     * Resolve live theme colours for this update only. Reading these on every
+     * update (rather than caching them in the constructor) is what lets the
+     * visual respond to report-theme changes and high-contrast toggles while
+     * the report stays open.
+     */
+    private resolveThemeColors(): void {
         this.isHighContrast = this.host.colorPalette.isHighContrast === true;
         const palette = this.host.colorPalette as unknown as {
             foreground?: { value?: string };
@@ -120,23 +147,22 @@ export class Visual implements IVisual {
         this.hcForeground = palette.foreground?.value || "#000000";
         this.hcBackground = palette.background?.value || "#ffffff";
 
-        this.root = document.createElement("div");
-        this.root.className = "atlynCalendarSlicer";
         this.root.classList.toggle("high-contrast", this.isHighContrast);
         if (this.isHighContrast) {
             this.root.style.color = this.hcForeground;
             this.root.style.background = this.hcBackground;
+        } else {
+            this.root.style.removeProperty("color");
+            this.root.style.removeProperty("background");
         }
-        this.target.appendChild(this.root);
-
-        // End any drag even if the pointer is released outside a day cell.
-        this.root.addEventListener("pointerup", () => this.endDrag());
-        this.root.addEventListener("pointerleave", () => this.endDrag());
     }
 
     public update(options: VisualUpdateOptions): void {
         this.host.eventService?.renderingStarted(options);
         try {
+            this.resolveThemeColors();
+            this.interactive = this.host.hostCapabilities?.allowInteractions !== false;
+            this.root.classList.toggle("read-only", !this.interactive);
             const dataView: DataView | undefined = options.dataViews?.[0];
             this.formattingSettings =
                 this.formattingSettingsService.populateFormattingSettingsModel(
@@ -311,6 +337,19 @@ export class Visual implements IVisual {
         }
     }
 
+    /**
+     * Restore selection from inbound bookmark/report state.
+     *
+     * NOTE: `pbiviz package` emits a "Bookmarks" warning for this visual. It is
+     * a KNOWN FALSE POSITIVE: the packager's heuristic only detects the
+     * SelectionManager bookmark path (`applySelectionFromFilter` /
+     * `registerOnSelectCallback`). We are a FILTER visual, and Microsoft
+     * documents a second valid path — filter visuals restore from
+     * `options.jsonFilters` (here), combined with the `general.filter` object
+     * and `filterState: true` on visibleYear/visibleMonth/activePreset. Do NOT
+     * add `registerOnSelectCallback` just to silence the warning; that would
+     * wire up an unused selection path we don't use.
+     */
     private restoreSelectionFromFilters(jsonFilters: powerbi.IFilter[] | undefined): void {
         if (!jsonFilters || jsonFilters.length === 0) {
             return;
@@ -461,6 +500,9 @@ export class Visual implements IVisual {
     // ---- interaction ----------------------------------------------------
 
     private onDayPointerDown(date: Date, event: PointerEvent): void {
+        if (!this.interactive) {
+            return;
+        }
         event.preventDefault();
         this.activePreset = null;
         this.focusedDate = date;
@@ -599,7 +641,7 @@ export class Visual implements IVisual {
     }
 
     private onGridKeyDown(event: KeyboardEvent): void {
-        if (!this.focusedDate) {
+        if (!this.interactive || !this.focusedDate) {
             return;
         }
         const weekStart = this.weekStart();
@@ -749,7 +791,11 @@ export class Visual implements IVisual {
         btn.className = "cs-btn";
         btn.textContent = label;
         btn.setAttribute("aria-label", ariaLabel);
-        btn.addEventListener("click", onClick);
+        if (this.interactive) {
+            btn.addEventListener("click", onClick);
+        } else {
+            btn.disabled = true;
+        }
         return btn;
     }
 
@@ -886,9 +932,9 @@ export class Visual implements IVisual {
         }
 
         const focused = this.focusedDate !== null && isSameDay(cell.date, this.focusedDate);
-        day.tabIndex = focused && inMonth ? 0 : -1;
+        day.tabIndex = this.interactive && focused && inMonth ? 0 : -1;
 
-        if (!noData) {
+        if (this.interactive && !noData) {
             day.addEventListener("pointerdown", (e) => this.onDayPointerDown(cell.date, e));
             day.addEventListener("pointerenter", () => this.onDayPointerEnter(cell.date));
         }

@@ -153,8 +153,22 @@ npm test
   heat-shading, Power BI disables *Sync slicers* across pages. Heat-shading is
   therefore opt-in (off by default); leave it off if you rely on synced slicers.
 - Very large date tables are reduced by the host to 30,000 rows before rendering,
-  which is enough for roughly 80 years of daily dates.
+  which is enough for roughly 80 years of daily dates. If a table exceeds that cap
+  the received dates may be incomplete, so **Grey days without data** automatically
+  disables itself rather than mislabel real days as empty.
 - Relative presets are evaluated against the report's current date at render time.
+- **Static/export contexts.** In PowerPoint export and email subscriptions the host
+  reports `allowInteractions = false`; the slicer then renders its current state
+  read-only (no clicks, drag, keyboard filtering, focus rings, or hover).
+- **Bookmarks.** `pbiviz package` prints a "Bookmarks" warning for this visual. It
+  is a **known false positive**: the packager only detects the *SelectionManager*
+  bookmark path. This is a **filter** visual, which restores from
+  `options.jsonFilters` (plus `general.filter` and `filterState: true` on the
+  visible-month/preset state) — the path Microsoft documents for filter visuals.
+  Bookmarks work correctly; `registerOnSelectCallback` is intentionally not used.
+- **Tooltips.** Not implemented in v1. Even in heat-shading mode the day number and
+  cell shading convey the value; a native `tooltipService` hover is a candidate for
+  a future release rather than a certification requirement.
 
 ---
 

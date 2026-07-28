@@ -153,6 +153,21 @@
         outline-offset: -2px;
     }
 
+    // Non-interactive host contexts (PowerPoint export, email subscriptions):
+    // render the current state read-only with no interactive affordances.
+    &.read-only .cs-day {
+        cursor: default;
+    }
+
+    &.read-only .cs-day:hover:not(.selected):not(.no-data) {
+        background: transparent;
+    }
+
+    &.read-only button.cs-btn {
+        cursor: default;
+        opacity: 0.6;
+    }
+
     .cs-landing {
         flex: 1 1 auto;
         display: flex;
