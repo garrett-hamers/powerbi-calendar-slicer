@@ -1,0 +1,159 @@
+{
+    "privileges": [],
+    "supportsHighlight": true,
+    "supportsKeyboardFocus": true,
+    "supportsSynchronizingFilterState": true,
+    "supportsLandingPage": true,
+    "supportsEmptyDataView": true,
+    "suppressDefaultTitle": true,
+    "dataRoles": [
+        {
+            "displayName": "Date",
+            "displayNameKey": "Role_Date",
+            "name": "Date",
+            "kind": "Grouping",
+            "description": "Date column to filter the report by",
+            "descriptionKey": "Role_Date_Desc"
+        },
+        {
+            "displayName": "Values",
+            "displayNameKey": "Role_Values",
+            "name": "Values",
+            "kind": "Measure",
+            "description": "Optional measure used to heat-shade days by magnitude",
+            "descriptionKey": "Role_Values_Desc"
+        }
+    ],
+    "dataViewMappings": [
+        {
+            "conditions": [
+                {
+                    "Date": { "min": 1, "max": 1 },
+                    "Values": { "min": 0, "max": 1 }
+                }
+            ],
+            "categorical": {
+                "categories": {
+                    "for": { "in": "Date" },
+                    "dataReductionAlgorithm": { "top": { "count": 30000 } }
+                },
+                "values": {
+                    "select": [{ "bind": { "to": "Values" } }]
+                }
+            }
+        }
+    ],
+    "objects": {
+        "general": {
+            "properties": {
+                "filter": {
+                    "type": { "filter": true }
+                },
+                "visibleYear": {
+                    "type": { "numeric": true },
+                    "filterState": true
+                },
+                "visibleMonth": {
+                    "type": { "numeric": true },
+                    "filterState": true
+                },
+                "activePreset": {
+                    "type": { "text": true },
+                    "filterState": true
+                }
+            }
+        },
+        "calendar": {
+            "properties": {
+                "weekStartDay": {
+                    "type": {
+                        "enumeration": [
+                            { "value": "0", "displayName": "Sunday" },
+                            { "value": "1", "displayName": "Monday" },
+                            { "value": "6", "displayName": "Saturday" }
+                        ]
+                    }
+                },
+                "monthsToShow": {
+                    "type": { "integer": true }
+                },
+                "showTodayMarker": {
+                    "type": { "bool": true }
+                },
+                "showWeekNumbers": {
+                    "type": { "bool": true }
+                },
+                "fiscalYearStartMonth": {
+                    "type": {
+                        "enumeration": [
+                            { "value": "1", "displayName": "January" },
+                            { "value": "2", "displayName": "February" },
+                            { "value": "3", "displayName": "March" },
+                            { "value": "4", "displayName": "April" },
+                            { "value": "5", "displayName": "May" },
+                            { "value": "6", "displayName": "June" },
+                            { "value": "7", "displayName": "July" },
+                            { "value": "8", "displayName": "August" },
+                            { "value": "9", "displayName": "September" },
+                            { "value": "10", "displayName": "October" },
+                            { "value": "11", "displayName": "November" },
+                            { "value": "12", "displayName": "December" }
+                        ]
+                    }
+                }
+            }
+        },
+        "cells": {
+            "properties": {
+                "textColor": {
+                    "type": { "fill": { "solid": { "color": true } } }
+                },
+                "headerColor": {
+                    "type": { "fill": { "solid": { "color": true } } }
+                },
+                "selectedColor": {
+                    "type": { "fill": { "solid": { "color": true } } }
+                },
+                "todayColor": {
+                    "type": { "fill": { "solid": { "color": true } } }
+                },
+                "weekendShading": {
+                    "type": { "bool": true }
+                },
+                "weekendColor": {
+                    "type": { "fill": { "solid": { "color": true } } }
+                }
+            }
+        },
+        "heatmap": {
+            "properties": {
+                "show": {
+                    "type": { "bool": true }
+                },
+                "minColor": {
+                    "type": { "fill": { "solid": { "color": true } } }
+                },
+                "maxColor": {
+                    "type": { "fill": { "solid": { "color": true } } }
+                },
+                "datesWithDataOnly": {
+                    "type": { "bool": true }
+                }
+            }
+        },
+        "presets": {
+            "properties": {
+                "show": {
+                    "type": { "bool": true }
+                }
+            }
+        },
+        "interaction": {
+            "properties": {
+                "multiSelect": {
+                    "type": { "bool": true }
+                }
+            }
+        }
+    }
+}

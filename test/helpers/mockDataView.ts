@@ -1,86 +1,50 @@
 /**
- * Mock DataView builder for Atlyn Word Cloud tests.
+ * Mock DataView builder for Atlyn Calendar Slicer tests.
  *
- * Mirrors the shape the visual reads: a categorical DataView with a `Category`
- * column (the words), an optional `Excludes` category column, an optional
- * `Values` measure (with optional highlights), and optional `tooltips` measures.
+ * Mirrors the shape the visual reads: a categorical DataView with a single
+ * `Date` category column (a `dateTime` column, or a `numeric` date-hierarchy
+ * level) and an optional `Values` measure (with optional highlights).
  */
 export interface MockDataInput {
-    categories: Array<string | number | boolean | Date | null | undefined>;
+    dates: Array<Date | number | string | null | undefined>;
     values?: Array<number | null | undefined>;
     highlights?: Array<number | null>;
-    sentiment?: Array<number | null | undefined>;
-    excludes?: string[];
-    categoryDisplayName?: string;
+    dateDisplayName?: string;
+    dateQueryName?: string;
+    /** Column source type. Defaults to a dateTime column. */
+    dateType?: "dateTime" | "numeric";
     valueDisplayName?: string;
-    sentimentDisplayName?: string;
     objects?: Record<string, Record<string, unknown>>;
-    tooltipMeasures?: Array<{
-        displayName: string;
-        values: Array<string | number | boolean | null | undefined>;
-    }>;
 }
 
 export function buildMockDataView(input: MockDataInput): any {
+    const columnType = input.dateType === "numeric"
+        ? { numeric: true }
+        : { dateTime: true };
+
     const categoryColumn = {
         source: {
-            displayName: input.categoryDisplayName || "Words",
-            queryName: "Table.Words",
-            type: { text: true },
-            roles: { Category: true }
+            displayName: input.dateDisplayName || "Date",
+            queryName: input.dateQueryName || "Calendar.Date",
+            type: columnType,
+            roles: { Date: true }
         },
-        values: input.categories
+        values: input.dates
     };
 
     const categories: any[] = [categoryColumn];
-
-    if (input.excludes) {
-        categories.push({
-            source: {
-                displayName: "Exclude",
-                queryName: "Table.Exclude",
-                type: { text: true },
-                roles: { Excludes: true }
-            },
-            values: input.excludes
-        });
-    }
-
     const valueColumns: any[] = [];
 
     if (input.values) {
         valueColumns.push({
             source: {
-                displayName: input.valueDisplayName || "Weight",
-                queryName: "Table.Weight",
+                displayName: input.valueDisplayName || "Amount",
+                queryName: "Calendar.Amount",
+                type: { numeric: true },
                 roles: { Values: true }
             },
             values: input.values,
             highlights: input.highlights
-        });
-    }
-
-    if (input.sentiment) {
-        valueColumns.push({
-            source: {
-                displayName: input.sentimentDisplayName || "Sentiment",
-                queryName: "Table.Sentiment",
-                roles: { Sentiment: true }
-            },
-            values: input.sentiment
-        });
-    }
-
-    if (input.tooltipMeasures) {
-        input.tooltipMeasures.forEach((measure, index) => {
-            valueColumns.push({
-                source: {
-                    displayName: measure.displayName,
-                    queryName: `Table.Tooltip${index + 1}`,
-                    roles: { tooltips: true }
-                },
-                values: measure.values
-            });
         });
     }
 
@@ -100,10 +64,7 @@ export function buildMockDataView(input: MockDataInput): any {
 
 export function buildEmptyDataView(): any {
     return {
-        categorical: {
-            categories: [],
-            values: []
-        },
+        categorical: { categories: [], values: [] },
         metadata: { columns: [] }
     };
 }

@@ -1,0 +1,181 @@
+# Atlyn Calendar Slicer
+
+A free, open-source Power BI custom visual that filters a report by a date column from a **real 7-column month grid** — not a horizontal timeline ribbon. Pick a single day, drag a date range, Ctrl-click individual days, or apply relative presets such as Month-to-Date, Year-to-Date, and Last 7 Days.
+
+![Power BI](https://img.shields.io/badge/Power_BI-API_5.11-yellow)
+![License](https://img.shields.io/badge/License-MIT-green)
+![Version](https://img.shields.io/badge/Version-1.0.0-blue)
+
+---
+
+## Features
+
+### A real calendar grid
+- Seven columns, five to six week rows, with leading and trailing days from the
+  adjacent months greyed for context.
+- Previous / next month navigation, a **Today** jump, and a configurable
+  week-start day (Sunday, Monday, or Saturday).
+- Optional ISO-8601 week-number column and weekend shading.
+
+### Produces filters, correctly
+- **Single day** click applies a one-day range.
+- **Click-drag** or **Shift-click** applies a contiguous range.
+- **Ctrl / ⌘-click** toggles individual, non-contiguous days.
+- **Relative presets** (Today, Yesterday, This Week, Last 7/14/30 Days, MTD, QTD,
+  YTD, Last Month/Quarter/Year) stay correct over time instead of freezing to the
+  date a bookmark was saved.
+- A visible **Clear** button removes the filter entirely.
+
+Ranges are applied as a **half-open interval** `[start, nextPeriodStart)` using
+`GreaterThanOrEqual` + `LessThan`, so fact rows that carry a time component (for
+example `2024-03-31T14:30:00`) are never silently dropped. All date serialisation
+is routed through a single timezone/DST-safe helper, unit-tested across UTC, a
+DST timezone, and a half-hour-offset timezone.
+
+### Optional heat-shading
+- Bind an optional **Values** measure to shade each day by magnitude on a
+  configurable low → high colour ramp, and optionally grey days that have no data.
+- See **Known limits** for the slicer-sync trade-off of binding a measure.
+
+### Accessible
+- `role="grid"` / `role="gridcell"`, `aria-selected`, and a per-day label
+  ("March 15, 2024").
+- Full arrow-key navigation, Enter/Space to select, Esc to clear, visible focus
+  rings, and right-click context menus.
+- High-contrast support via the host colour palette, and report-theme awareness.
+- Rendering lifecycle events (`renderingStarted` / `renderingFinished` /
+  `renderingFailed`) are reported to the host.
+
+### Localized
+- Field-well labels, format-pane cards/slices, and messages are localized through
+  the host localization manager, with English strings in
+  `stringResources/en-US/resources.resjson`. Add a sibling locale folder to translate.
+
+---
+
+## Data Roles
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| **Date** | Grouping | ✅ | Date column (or a date-hierarchy level) to filter by |
+| **Values** | Measure | | Optional measure used to heat-shade days by magnitude |
+
+Accepted **Date** columns are a `dateTime` column, or a `numeric` column at the
+`Year` / `Date` level of a date hierarchy. Anything else shows a landing message.
+
+---
+
+## Format Pane Options
+
+| Card | Options |
+|------|---------|
+| **Calendar** | Week starts on, months shown, mark today, show week numbers, fiscal-year start month |
+| **Cells** | Text / header / selected / today colours, weekend shading and colour |
+| **Heatmap** | Heat-shade days, low/high colours, grey days without data |
+| **Presets** | Show preset buttons |
+| **Interaction** | Allow multi-select |
+
+---
+
+## Installation
+
+### From a Locally Built Package
+1. Run `npm ci` and `npm run package`
+2. In Power BI Desktop → **File → Import → Power BI Visual**
+3. Select `dist/calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.0.pbiviz`
+
+### Development
+
+```bash
+# Install dependencies
+npm install
+
+# Start dev server (requires Power BI developer mode)
+npm start
+
+# Type-check, lint, and test
+npm run typecheck
+npm run lint
+npm test
+
+# Regenerate the icon (assets/icon.png)
+npm run icon
+
+# Package for distribution (runs the certification audit)
+npm run package
+
+# Report the timestamp-dependent outer hash and stable embedded-content hash
+npm run hash:package
+```
+
+---
+
+## Validation
+
+There is **no hosted CI** for this repository, by policy (see [AGENTS.md](AGENTS.md)).
+The single supported validation entry point runs the whole gate locally:
+
+```bash
+# audit + eslint + typecheck + tests + package
+npm run certify
+```
+
+Run it from a clean `npm ci` before considering a change ready. The `.pbiviz`
+outer SHA-256 changes between otherwise identical builds because the package ZIP
+records build timestamps — recompute it immediately before upload, and use
+`npm run hash:package` to compare the stable hash over the archive's embedded
+content.
+
+---
+
+## Testing
+
+Automated tests run under Vitest with the happy-dom environment.
+
+| Suite | Coverage |
+|-------|----------|
+| Metadata | Identity, versions, capabilities roles/objects, toolchain, no hosted CI, banned APIs |
+| Package Hashing | Stable framed hash and structural-collision resistance |
+| Date Math | TZ/DST-safe serialisation matrix, ISO week numbers, month-grid generation, fiscal offsets |
+| Date Filters | Half-open range interval, basic multi-day filter, relative-date presets |
+| Visual Integration | Landing/empty states, grid render, selection, filter application, ARIA, high contrast |
+
+```bash
+npm test
+```
+
+---
+
+## Known limits
+
+- **Slicer sync + heat-shading.** `supportsSynchronizingFilterState` supports only
+  one bound field at a time. When the optional **Values** measure is bound for
+  heat-shading, Power BI disables *Sync slicers* across pages. Heat-shading is
+  therefore opt-in (off by default); leave it off if you rely on synced slicers.
+- Very large date tables are reduced by the host to 30,000 rows before rendering,
+  which is enough for roughly 80 years of daily dates.
+- Relative presets are evaluated against the report's current date at render time.
+
+---
+
+## Tech Stack
+
+- **Power BI Visuals API** 5.11.0
+- **TypeScript** with hand-rolled, timezone-safe date math (no date library)
+- Plain DOM rendering (no runtime charting dependency)
+- **Vitest** + happy-dom for testing
+
+---
+
+## License
+
+MIT License — free for personal and commercial use.
+
+---
+
+## Credits
+
+Built by [Atlyn](https://github.com/garrett-hamers). Filter and timezone-handling
+patterns follow Microsoft's open-source
+[powerbi-visuals-timeline](https://github.com/microsoft/powerbi-visuals-timeline)
+reference implementation.
