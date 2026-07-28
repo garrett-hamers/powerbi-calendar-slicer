@@ -128,6 +128,30 @@ content.
 
 ---
 
+## Release / distribution
+
+The packaged file and the storefront download have **two different names** — this
+is expected (Word Cloud has the same split), so the rename below is a required
+manual handoff step:
+
+1. **Build.** `npm run certify` (or `npm run package`) writes
+   `dist/calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.0.pbiviz` — `pbiviz` always
+   names the output `{guid}.{version}.pbiviz`.
+2. **Rename for the storefront.** Copy it to **`atlynCalendarSlicer.pbiviz`** to
+   match `DownloadFileName` in the product catalogue, and upload it to the blob
+   path `visuals/calendar-slicer/1.0.0.0/atlynCalendarSlicer.pbiviz`. Renaming
+   does not change the bytes, so the SHA-256 is unaffected.
+3. **Record the hash.** `npm run hash:package` produces the SHA-256 for the
+   Partner Center certification notes. The hash you submit must match the file in
+   blob storage **byte-for-byte** — compute it against the exact archive you
+   upload (recompute after any rebuild, since the outer ZIP hash is
+   timestamp-dependent).
+
+Keep the version pinned at `1.0.0.0` across `package.json`, `pbiviz.json`, and the
+blob path until a packaged-content change warrants a coordinated bump.
+
+---
+
 ## Testing
 
 Automated tests run under Vitest with the happy-dom environment.
