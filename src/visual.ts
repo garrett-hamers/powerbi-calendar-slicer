@@ -30,6 +30,7 @@ import {
     addMonths,
     buildMonthGrid,
     CalendarDay,
+    getISOWeek,
     isSameDay,
     makeDate,
     parseDateWithoutTimezone,
@@ -447,7 +448,7 @@ export class Visual implements IVisual {
         event.preventDefault();
         this.activePreset = null;
         this.focusedDate = date;
-        this.moveVisibleTo(date);
+        this.ensureVisible(date);
 
         const multiSelectEnabled = this.formattingSettings.interactionCard.multiSelect.value;
 
@@ -523,6 +524,24 @@ export class Visual implements IVisual {
         this.visible = { year: date.getFullYear(), month: date.getMonth() };
     }
 
+    /**
+     * Re-anchor the visible range only when `date` falls outside the currently
+     * shown months, so keyboard/mouse focus can move within a multi-month view
+     * without scrolling the whole range on every step.
+     */
+    private ensureVisible(date: Date): void {
+        if (!this.visible) {
+            return;
+        }
+        const start = makeDate(this.visible.year, this.visible.month, 1);
+        const end = addMonths(start, this.monthsToShow());
+        const d = startOfDay(date);
+        if (d >= start && d < end) {
+            return;
+        }
+        this.moveVisibleTo(date);
+    }
+
     private navigateMonths(delta: number): void {
         if (!this.visible) {
             return;
@@ -596,7 +615,7 @@ export class Visual implements IVisual {
         if (next) {
             event.preventDefault();
             this.focusedDate = next;
-            this.moveVisibleTo(next);
+            this.ensureVisible(next);
             this.renderCalendar();
             this.focusActiveCell();
         }
@@ -633,7 +652,21 @@ export class Visual implements IVisual {
         if (this.formattingSettings.presetsCard.show.value) {
             this.root.appendChild(this.buildPresets());
         }
-        this.root.appendChild(this.buildGrid(this.visible.year, this.visible.month));
+
+        const months = this.monthsToShow();
+        if (months <= 1) {
+            this.root.appendChild(this.buildGrid(this.visible.year, this.visible.month, false));
+            return;
+        }
+
+        const container = document.createElement("div");
+        container.className = "cs-months";
+        const first = makeDate(this.visible.year, this.visible.month, 1);
+        for (let i = 0; i < months; i++) {
+            const m = addMonths(first, i);
+            container.appendChild(this.buildGrid(m.getFullYear(), m.getMonth(), true));
+        }
+        this.root.appendChild(container);
     }
 
     private buildPresets(): HTMLElement {
@@ -675,7 +708,7 @@ export class Visual implements IVisual {
 
         const title = document.createElement("div");
         title.className = "cs-title";
-        title.textContent = this.monthTitle(this.visible!.year, this.visible!.month);
+        title.textContent = this.rangeTitle();
         bar.appendChild(title);
 
         const actions = document.createElement("div");
@@ -704,21 +737,36 @@ export class Visual implements IVisual {
         return btn;
     }
 
-    private buildGrid(year: number, month: number): HTMLElement {
+    private buildGrid(year: number, month: number, withCaption: boolean): HTMLElement {
         const weekStart = this.weekStart();
         const cells = this.formattingSettings.cellsCard;
+        const showWeekNumbers = this.formattingSettings.calendarCard.showWeekNumbers.value;
 
         const table = document.createElement("table");
         table.className = "cs-grid";
         table.setAttribute("role", "grid");
-        table.setAttribute("aria-label", this.localize("Aria_Calendar", "Calendar date slicer"));
+        table.setAttribute("aria-label", this.monthTitle(year, month));
         if (this.formattingSettings.interactionCard.multiSelect.value) {
             table.setAttribute("aria-multiselectable", "true");
+        }
+
+        if (withCaption) {
+            const caption = document.createElement("caption");
+            caption.textContent = this.monthTitle(year, month);
+            table.appendChild(caption);
         }
 
         const thead = document.createElement("thead");
         const headRow = document.createElement("tr");
         headRow.setAttribute("role", "row");
+        if (showWeekNumbers) {
+            const wk = document.createElement("th");
+            wk.setAttribute("role", "columnheader");
+            wk.setAttribute("scope", "col");
+            wk.className = "cs-week-number";
+            wk.textContent = this.localize("Aria_WeekNumber", "Wk");
+            headRow.appendChild(wk);
+        }
         for (const label of this.weekdayLabels(weekStart)) {
             const th = document.createElement("th");
             th.setAttribute("role", "columnheader");
@@ -737,6 +785,15 @@ export class Visual implements IVisual {
         for (const week of grid) {
             const tr = document.createElement("tr");
             tr.setAttribute("role", "row");
+            if (showWeekNumbers) {
+                const wk = document.createElement("td");
+                wk.className = "cs-week-number";
+                wk.setAttribute("role", "rowheader");
+                // Use a mid-week day so the ISO week is unambiguous regardless
+                // of the configured display week start.
+                wk.textContent = String(getISOWeek(week[3].date));
+                tr.appendChild(wk);
+            }
             for (const cell of week) {
                 tr.appendChild(this.buildDayCell(cell, month));
             }
@@ -813,7 +870,7 @@ export class Visual implements IVisual {
         }
 
         const focused = this.focusedDate !== null && isSameDay(cell.date, this.focusedDate);
-        day.tabIndex = focused ? 0 : -1;
+        day.tabIndex = focused && inMonth ? 0 : -1;
 
         if (!noData) {
             day.addEventListener("pointerdown", (e) => this.onDayPointerDown(cell.date, e));
@@ -829,7 +886,8 @@ export class Visual implements IVisual {
             return;
         }
         const key = this.dayKey(this.focusedDate);
-        const el = this.root.querySelector<HTMLElement>(`.cs-day[data-key="${key}"]`);
+        const el = this.root.querySelector<HTMLElement>(`.cs-day[data-key="${key}"]:not(.other-month)`)
+            ?? this.root.querySelector<HTMLElement>(`.cs-day[data-key="${key}"]`);
         el?.focus();
     }
 
@@ -863,6 +921,28 @@ export class Visual implements IVisual {
     private fiscalStartMonth(): number {
         const value = Number(this.formattingSettings.calendarCard.fiscalYearStartMonth.value.value);
         return value >= 1 && value <= 12 ? value : 1;
+    }
+
+    private monthsToShow(): number {
+        const value = Number(this.formattingSettings.calendarCard.monthsToShow.value);
+        if (isNaN(value)) {
+            return 1;
+        }
+        return Math.min(4, Math.max(1, Math.round(value)));
+    }
+
+    private rangeTitle(): string {
+        if (!this.visible) {
+            return "";
+        }
+        const months = this.monthsToShow();
+        const first = this.monthTitle(this.visible.year, this.visible.month);
+        if (months <= 1) {
+            return first;
+        }
+        const lastDate = addMonths(makeDate(this.visible.year, this.visible.month, 1), months - 1);
+        const last = this.monthTitle(lastDate.getFullYear(), lastDate.getMonth());
+        return `${first} \u2013 ${last}`;
     }
 
     /**

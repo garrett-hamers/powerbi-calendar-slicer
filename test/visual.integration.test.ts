@@ -220,4 +220,44 @@ describe("Atlyn Calendar Slicer visual", () => {
         expect(withoutData!.classList.contains("no-data")).toBe(true);
         expect(withoutData!.getAttribute("aria-disabled")).toBe("true");
     });
+
+    it("renders multiple month grids when monthsToShow > 1", () => {
+        const { visual, element } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 15)],
+            objects: { calendar: { monthsToShow: 3 } }
+        })));
+
+        const grids = element.querySelectorAll(".cs-grid");
+        expect(grids.length).toBe(3);
+        const container = element.querySelector(".cs-months");
+        expect(container).not.toBeNull();
+        // Each grid is captioned with its own month.
+        const captions = element.querySelectorAll(".cs-grid caption");
+        expect(captions.length).toBe(3);
+        // Toolbar title spans the visible range.
+        const title = element.querySelector(".cs-title");
+        expect(title!.textContent).toContain("\u2013");
+    });
+
+    it("renders an ISO week-number column when showWeekNumbers is enabled", () => {
+        const { visual, element } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 0, 15)],
+            objects: { calendar: { showWeekNumbers: true } }
+        })));
+
+        const grid = element.querySelector(".cs-grid")!;
+        const headerCells = grid.querySelectorAll("thead th");
+        // 7 weekday columns + 1 week-number column.
+        expect(headerCells.length).toBe(8);
+        const weekHeader = grid.querySelector("thead th.cs-week-number");
+        expect(weekHeader).not.toBeNull();
+        const weekCells = grid.querySelectorAll("tbody td.cs-week-number");
+        expect(weekCells.length).toBeGreaterThanOrEqual(5);
+        // First tbody week-number is a positive ISO week number.
+        const first = Number(weekCells[0].textContent);
+        expect(first).toBeGreaterThan(0);
+        expect(first).toBeLessThanOrEqual(53);
+    });
 });
