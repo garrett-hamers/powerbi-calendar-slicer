@@ -24,6 +24,7 @@ import {
     FilterTarget,
     targetFromQueryName
 } from "./dateFilter";
+import { PRESETS, PresetContext, presetByKey } from "./presets";
 import {
     addDays,
     addMonths,
@@ -71,8 +72,14 @@ export class Visual implements IVisual {
     private filterTarget: FilterTarget | null = null;
     private dataMin: Date | null = null;
     private dataMax: Date | null = null;
+    /** Per-day aggregated measure values, keyed by day key. */
+    private dataValues = new Map<string, number>();
+    private valueMin = 0;
+    private valueMax = 0;
+    private hasValues = false;
 
     private selection: Selection = { type: "none" };
+    private activePreset: string | null = null;
     private visible: VisibleMonth | null = null;
     private focusedDate: Date | null = null;
 
@@ -143,8 +150,9 @@ export class Visual implements IVisual {
             }
 
             this.filterTarget = targetFromQueryName(category.source.queryName || "");
-            this.parseDataRange(category);
+            this.parseData(dataView, category);
             this.restoreVisibleMonth(dataView);
+            this.restoreActivePreset(dataView);
             this.restoreSelectionFromFilters(options.jsonFilters);
 
             if (!this.focusedDate) {
@@ -181,11 +189,19 @@ export class Visual implements IVisual {
         return first instanceof Date;
     }
 
-    private parseDataRange(category: DataViewCategoryColumn): void {
+    private parseData(dataView: DataView | undefined, category: DataViewCategoryColumn): void {
         let min: Date | null = null;
         let max: Date | null = null;
-        for (const raw of category.values || []) {
-            const date = this.coerceDate(raw);
+        this.dataValues = new Map<string, number>();
+        this.hasValues = false;
+
+        const values = dataView?.categorical?.values?.[0];
+        const measures = values?.values;
+        this.hasValues = Array.isArray(measures) && measures.length > 0;
+
+        const raws = category.values || [];
+        for (let i = 0; i < raws.length; i++) {
+            const date = this.coerceDate(raws[i]);
             if (!date) {
                 continue;
             }
@@ -195,9 +211,35 @@ export class Visual implements IVisual {
             if (!max || date > max) {
                 max = date;
             }
+            if (this.hasValues && measures) {
+                const raw = measures[i];
+                const num = typeof raw === "number" ? raw : Number(raw);
+                if (!isNaN(num)) {
+                    const key = this.dayKey(date);
+                    this.dataValues.set(key, (this.dataValues.get(key) || 0) + num);
+                }
+            }
         }
         this.dataMin = min;
         this.dataMax = max;
+
+        this.valueMin = 0;
+        this.valueMax = 0;
+        let first = true;
+        for (const v of this.dataValues.values()) {
+            if (first) {
+                this.valueMin = v;
+                this.valueMax = v;
+                first = false;
+            } else {
+                if (v < this.valueMin) {
+                    this.valueMin = v;
+                }
+                if (v > this.valueMax) {
+                    this.valueMax = v;
+                }
+            }
+        }
     }
 
     private coerceDate(raw: powerbi.PrimitiveValue): Date | null {
@@ -238,6 +280,18 @@ export class Visual implements IVisual {
         }
         const anchor = this.dataMax || new Date();
         this.visible = { year: anchor.getFullYear(), month: anchor.getMonth() };
+    }
+
+    private restoreActivePreset(dataView: DataView | undefined): void {
+        if (this.activePreset !== null) {
+            return;
+        }
+        const general = dataView?.metadata?.objects?.general as
+            | { activePreset?: string }
+            | undefined;
+        if (general && typeof general.activePreset === "string" && general.activePreset) {
+            this.activePreset = general.activePreset;
+        }
     }
 
     private restoreSelectionFromFilters(jsonFilters: powerbi.IFilter[] | undefined): void {
@@ -296,7 +350,8 @@ export class Visual implements IVisual {
                 selector: null,
                 properties: {
                     visibleYear: this.visible.year,
-                    visibleMonth: this.visible.month
+                    visibleMonth: this.visible.month,
+                    activePreset: this.activePreset || ""
                 }
             }]
         };
@@ -350,8 +405,39 @@ export class Visual implements IVisual {
 
     private clearSelection(): void {
         this.selection = { type: "none" };
+        this.activePreset = null;
         this.dragAnchor = null;
         this.applySelection();
+        this.persistVisibleMonth();
+        this.renderCalendar();
+    }
+
+    private applyPreset(key: string): void {
+        if (!this.filterTarget) {
+            return;
+        }
+        const preset = presetByKey(key);
+        if (!preset) {
+            return;
+        }
+        const ctx: PresetContext = {
+            now: startOfDay(new Date()),
+            fiscalStartMonth: this.fiscalStartMonth(),
+            weekStart: this.weekStart(),
+            target: this.filterTarget
+        };
+        const result = preset.compute(ctx);
+        this.activePreset = key;
+        this.selection = {
+            type: "range",
+            start: result.start,
+            end: addDays(result.endExclusive, -1)
+        };
+        this.dragAnchor = result.start;
+        this.focusedDate = result.start;
+        this.moveVisibleTo(result.start);
+        this.host.applyJsonFilter(result.filter, "general", "filter", FILTER_ACTION_MERGE);
+        this.persistVisibleMonth();
         this.renderCalendar();
     }
 
@@ -359,6 +445,7 @@ export class Visual implements IVisual {
 
     private onDayPointerDown(date: Date, event: PointerEvent): void {
         event.preventDefault();
+        this.activePreset = null;
         this.focusedDate = date;
         this.moveVisibleTo(date);
 
@@ -462,6 +549,7 @@ export class Visual implements IVisual {
         if (!this.focusedDate) {
             return;
         }
+        this.activePreset = null;
         const multiSelectEnabled = this.formattingSettings.interactionCard.multiSelect.value;
         if ((event.ctrlKey || event.metaKey) && multiSelectEnabled) {
             this.toggleDay(this.focusedDate);
@@ -542,7 +630,29 @@ export class Visual implements IVisual {
             return;
         }
         this.root.appendChild(this.buildToolbar());
+        if (this.formattingSettings.presetsCard.show.value) {
+            this.root.appendChild(this.buildPresets());
+        }
         this.root.appendChild(this.buildGrid(this.visible.year, this.visible.month));
+    }
+
+    private buildPresets(): HTMLElement {
+        const bar = document.createElement("div");
+        bar.className = "cs-presets";
+        bar.setAttribute("role", "group");
+        bar.setAttribute("aria-label", this.localize("Aria_Presets", "Relative date presets"));
+        for (const preset of PRESETS) {
+            const label = this.localize(preset.labelKey, preset.label);
+            const btn = this.button(label, label, () => this.applyPreset(preset.key));
+            if (this.activePreset === preset.key) {
+                btn.classList.add("active");
+                btn.setAttribute("aria-pressed", "true");
+            } else {
+                btn.setAttribute("aria-pressed", "false");
+            }
+            bar.appendChild(btn);
+        }
+        return bar;
     }
 
     private buildToolbar(): HTMLElement {
@@ -666,6 +776,25 @@ export class Visual implements IVisual {
             }
         }
 
+        const heatmap = this.formattingSettings.heatmapCard;
+        const dayKey = this.dayKey(cell.date);
+        const hasData = this.dataValues.has(dayKey);
+
+        if (heatmap.show.value && this.hasValues && hasData && !this.isHighContrast) {
+            const value = this.dataValues.get(dayKey) as number;
+            day.style.background = this.heatColor(
+                value,
+                heatmap.minColor.value.value,
+                heatmap.maxColor.value.value
+            );
+        }
+
+        const noData = heatmap.datesWithDataOnly.value && this.hasValues && !hasData;
+        if (noData) {
+            day.classList.add("no-data");
+            day.setAttribute("aria-disabled", "true");
+        }
+
         if (calendar.showTodayMarker.value && isSameDay(cell.date, startOfDay(new Date()))) {
             day.classList.add("today");
             if (!this.isHighContrast) {
@@ -686,8 +815,10 @@ export class Visual implements IVisual {
         const focused = this.focusedDate !== null && isSameDay(cell.date, this.focusedDate);
         day.tabIndex = focused ? 0 : -1;
 
-        day.addEventListener("pointerdown", (e) => this.onDayPointerDown(cell.date, e));
-        day.addEventListener("pointerenter", () => this.onDayPointerEnter(cell.date));
+        if (!noData) {
+            day.addEventListener("pointerdown", (e) => this.onDayPointerDown(cell.date, e));
+            day.addEventListener("pointerenter", () => this.onDayPointerEnter(cell.date));
+        }
 
         td.appendChild(day);
         return td;
@@ -727,6 +858,42 @@ export class Visual implements IVisual {
     private weekStart(): WeekStart {
         const value = Number(this.formattingSettings.calendarCard.weekStartDay.value.value);
         return (value === 1 || value === 6 ? value : 0) as WeekStart;
+    }
+
+    private fiscalStartMonth(): number {
+        const value = Number(this.formattingSettings.calendarCard.fiscalYearStartMonth.value.value);
+        return value >= 1 && value <= 12 ? value : 1;
+    }
+
+    /**
+     * Linear interpolation between two hex colours by the value's position in
+     * the observed [min, max] range. Returns an "rgb(r, g, b)" string.
+     */
+    private heatColor(value: number, minHex: string, maxHex: string): string {
+        const span = this.valueMax - this.valueMin;
+        const t = span > 0 ? (value - this.valueMin) / span : 1;
+        const from = this.hexToRgb(minHex);
+        const to = this.hexToRgb(maxHex);
+        const r = Math.round(from.r + (to.r - from.r) * t);
+        const g = Math.round(from.g + (to.g - from.g) * t);
+        const b = Math.round(from.b + (to.b - from.b) * t);
+        return `rgb(${r}, ${g}, ${b})`;
+    }
+
+    private hexToRgb(hex: string): { r: number; g: number; b: number } {
+        let value = hex.replace("#", "");
+        if (value.length === 3) {
+            value = value.split("").map((c) => c + c).join("");
+        }
+        const int = parseInt(value, 16);
+        if (isNaN(int)) {
+            return { r: 0, g: 0, b: 0 };
+        }
+        return {
+            r: (int >> 16) & 0xff,
+            g: (int >> 8) & 0xff,
+            b: int & 0xff
+        };
     }
 
     private weekdayLabels(weekStart: WeekStart): string[] {

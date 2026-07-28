@@ -164,4 +164,60 @@ describe("Atlyn Calendar Slicer visual", () => {
         const titleAfter = element.querySelector(".cs-title")?.textContent;
         expect(titleAfter).not.toBe(titleBefore);
     });
+
+    it("renders preset buttons and applies a filter when one is clicked", () => {
+        const { visual, element, applied } = createVisual();
+        visual.update(updateOptions(buildMockDataView({ dates: [new Date(2024, 2, 15)] })));
+
+        const presets = element.querySelector(".cs-presets");
+        expect(presets).not.toBeNull();
+        const last7 = Array.from(
+            presets!.querySelectorAll<HTMLButtonElement>(".cs-btn")
+        ).find((b) => b.textContent === "Last 7 Days");
+        expect(last7).toBeDefined();
+
+        last7!.dispatchEvent(new Event("click", { bubbles: true }));
+        const merges = applied.filter((a) => a.action === 0 && a.filter);
+        expect(merges.length).toBeGreaterThanOrEqual(1);
+        // Relative filter round-trips as InLast (0) over 7 Days (0).
+        const filter = merges[merges.length - 1].filter as {
+            operator: number; timeUnitsCount: number;
+        };
+        expect(filter.operator).toBe(0);
+        expect(filter.timeUnitsCount).toBe(7);
+        const activeAfter = Array.from(
+            element.querySelectorAll<HTMLButtonElement>(".cs-presets .cs-btn")
+        ).find((b) => b.textContent === "Last 7 Days");
+        expect(activeAfter!.classList.contains("active")).toBe(true);
+    });
+
+    it("heat-shades day cells when a measure is bound and the heatmap is enabled", () => {
+        const { visual, element } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 1), new Date(2024, 2, 31)],
+            values: [10, 100],
+            objects: { heatmap: { show: true } }
+        })));
+
+        const low = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-1']");
+        const high = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-31']");
+        expect(low!.style.background).toContain("rgb");
+        expect(high!.style.background).toContain("rgb");
+        expect(low!.style.background).not.toBe(high!.style.background);
+    });
+
+    it("greys days without data when 'dates with data only' is enabled", () => {
+        const { visual, element } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 1), new Date(2024, 2, 15)],
+            values: [10, 20],
+            objects: { heatmap: { datesWithDataOnly: true } }
+        })));
+
+        const withData = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-15']");
+        const withoutData = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-10']");
+        expect(withData!.classList.contains("no-data")).toBe(false);
+        expect(withoutData!.classList.contains("no-data")).toBe(true);
+        expect(withoutData!.getAttribute("aria-disabled")).toBe("true");
+    });
 });

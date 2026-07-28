@@ -60,5 +60,6 @@
     "Landing_BadType": "The Date field must be a date column or a date hierarchy level",
 
     "Aria_Calendar": "Calendar date slicer",
+    "Aria_Presets": "Relative date presets",
     "Aria_WeekNumber": "Week"
 }
