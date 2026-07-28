@@ -64,6 +64,8 @@ export class Visual implements IVisual {
     private formattingSettings: VisualFormattingSettingsModel;
 
     private readonly isHighContrast: boolean;
+    private readonly hcForeground: string;
+    private readonly hcBackground: string;
     private readonly locale: string;
 
     private filterTarget: FilterTarget | null = null;
@@ -89,10 +91,20 @@ export class Visual implements IVisual {
         this.formattingSettings = new VisualFormattingSettingsModel();
 
         this.isHighContrast = this.host.colorPalette.isHighContrast === true;
+        const palette = this.host.colorPalette as unknown as {
+            foreground?: { value?: string };
+            background?: { value?: string };
+        };
+        this.hcForeground = palette.foreground?.value || "#000000";
+        this.hcBackground = palette.background?.value || "#ffffff";
 
         this.root = document.createElement("div");
         this.root.className = "atlynCalendarSlicer";
         this.root.classList.toggle("high-contrast", this.isHighContrast);
+        if (this.isHighContrast) {
+            this.root.style.color = this.hcForeground;
+            this.root.style.background = this.hcBackground;
+        }
         this.target.appendChild(this.root);
 
         // End any drag even if the pointer is released outside a day cell.
@@ -590,6 +602,9 @@ export class Visual implements IVisual {
         table.className = "cs-grid";
         table.setAttribute("role", "grid");
         table.setAttribute("aria-label", this.localize("Aria_Calendar", "Calendar date slicer"));
+        if (this.formattingSettings.interactionCard.multiSelect.value) {
+            table.setAttribute("aria-multiselectable", "true");
+        }
 
         const thead = document.createElement("thead");
         const headRow = document.createElement("tr");
@@ -599,7 +614,9 @@ export class Visual implements IVisual {
             th.setAttribute("role", "columnheader");
             th.setAttribute("scope", "col");
             th.textContent = label;
-            th.style.color = cells.headerColor.value.value;
+            if (!this.isHighContrast) {
+                th.style.color = cells.headerColor.value.value;
+            }
             headRow.appendChild(th);
         }
         thead.appendChild(headRow);
@@ -637,17 +654,23 @@ export class Visual implements IVisual {
         if (!inMonth) {
             day.classList.add("other-month");
         }
-        day.style.color = cells.textColor.value.value;
+        if (!this.isHighContrast) {
+            day.style.color = cells.textColor.value.value;
+        }
 
         const isWeekend = cell.date.getDay() === 0 || cell.date.getDay() === 6;
         if (cells.weekendShading.value && isWeekend) {
             day.classList.add("weekend");
-            day.style.background = cells.weekendColor.value.value;
+            if (!this.isHighContrast) {
+                day.style.background = cells.weekendColor.value.value;
+            }
         }
 
         if (calendar.showTodayMarker.value && isSameDay(cell.date, startOfDay(new Date()))) {
             day.classList.add("today");
-            day.style.boxShadow = `inset 0 0 0 1px ${cells.todayColor.value.value}`;
+            if (!this.isHighContrast) {
+                day.style.boxShadow = `inset 0 0 0 1px ${cells.todayColor.value.value}`;
+            }
         }
 
         const selected = this.isSelected(cell.date);
