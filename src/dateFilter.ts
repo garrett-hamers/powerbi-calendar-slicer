@@ -3,13 +3,29 @@
  *
  * Selection semantics map to the Power BI filter APIs as follows:
  *   - contiguous range      -> AdvancedFilter (GreaterThanOrEqual + LessThan)
- *   - non-contiguous days    -> BasicFilter ("In", array of ISO dates)
+ *   - non-contiguous days    -> BasicFilter ("In", array of naive-local dates)
  *   - relative presets       -> RelativeDateFilter (InLast / InThis)
  *
  * Ranges are ALWAYS half-open: [start, endExclusive) where endExclusive is the
  * start of the next period. Using LessThanOrEqual would silently drop fact rows
  * whose date carries a time component (e.g. 2024-03-31T14:30:00). Verified
  * against powerbi-visuals-timeline (src/timeLine.ts).
+ *
+ * NOTE on the two serialisation forms: range boundaries use the UTC-relabelled
+ * `serializeDate` form ("...T00:00:00.000Z"), which Power BI compares tolerantly.
+ * The discrete `BasicFilter ("In")` path instead uses the NAIVE local form
+ * `serializeDateNaive` ("...T00:00:00", no Z). An `In` filter matches by EXACT
+ * equality; a trailing Z is interpreted as UTC and converted into the model
+ * timezone before comparison, so a UTC-relabelled local midnight never equals
+ * the local-midnight DateTime stored in the column and the filter matches
+ * nothing. This asymmetry is deliberate and is locked by unit tests.
+ *
+ * A single AdvancedFilter cannot express a non-contiguous selection: powerbi-
+ * models caps AdvancedFilter at two conditions (models.js:437-438,
+ * "AdvancedFilters may not have more than two conditions"), and an array of
+ * filters passed to applyJsonFilter is AND-combined, not OR-combined. So
+ * OR-of-half-open-day-ranges is not expressible, and BasicFilter remains the
+ * correct primitive for discrete multi-day selection.
  */
 import {
     AdvancedFilter,
@@ -19,7 +35,7 @@ import {
     RelativeDateFilterTimeUnit,
     RelativeDateOperators
 } from "powerbi-models";
-import { addDays, serializeDate, startOfDay } from "./utils/dateMath";
+import { addDays, serializeDate, serializeDateNaive, startOfDay } from "./utils/dateMath";
 
 export type FilterTarget = IFilterColumnTarget;
 
@@ -67,13 +83,16 @@ export function buildDayFilter(day: Date, target: FilterTarget): AdvancedFilter 
 
 /**
  * Non-contiguous multi-day filter. Days are de-duplicated, sorted, and
- * serialised through the single TZ-safe path.
+ * serialised through the NAIVE local wall-clock path (no `Z`) so Power BI's
+ * exact-match `In` semantics compare against the model's local-midnight
+ * DateTime values. Using the UTC-relabelled range form here produces a filter
+ * that matches nothing — see the module header and serializeDateNaive.
  */
 export function buildMultiDayFilter(days: Date[], target: FilterTarget): BasicFilter {
     const seen = new Set<string>();
     const values: string[] = [];
     for (const day of days) {
-        const iso = serializeDate(startOfDay(day));
+        const iso = serializeDateNaive(startOfDay(day));
         if (!seen.has(iso)) {
             seen.add(iso);
             values.push(iso);

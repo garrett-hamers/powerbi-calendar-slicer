@@ -82,7 +82,7 @@ Accepted **Date** columns are a `dateTime` column, or a `numeric` column at the
 ### From a Locally Built Package
 1. Run `npm ci` and `npm run package`
 2. In Power BI Desktop → **File → Import → Power BI Visual**
-3. Select `dist/calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.0.pbiviz`
+3. Select `dist/calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.1.pbiviz`
 
 ### Development
 
@@ -135,11 +135,11 @@ is expected (Word Cloud has the same split), so the rename below is a required
 manual handoff step:
 
 1. **Build.** `npm run certify` (or `npm run package`) writes
-   `dist/calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.0.pbiviz` — `pbiviz` always
+   `dist/calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.1.pbiviz` — `pbiviz` always
    names the output `{guid}.{version}.pbiviz`.
 2. **Rename for the storefront.** Copy it to **`atlynCalendarSlicer.pbiviz`** to
    match `DownloadFileName` in the product catalogue, and upload it to the blob
-   path `visuals/calendar-slicer/1.0.0.0/atlynCalendarSlicer.pbiviz`. Renaming
+   path `visuals/calendar-slicer/1.0.0.1/atlynCalendarSlicer.pbiviz`. Renaming
    does not change the bytes, so the SHA-256 is unaffected.
 3. **Record the hash.** `npm run hash:package` produces the SHA-256 for the
    Partner Center certification notes. The hash you submit must match the file in
@@ -147,7 +147,7 @@ manual handoff step:
    upload (recompute after any rebuild, since the outer ZIP hash is
    timestamp-dependent).
 
-Keep the version pinned at `1.0.0.0` across `package.json`, `pbiviz.json`, and the
+Keep the version pinned at `1.0.0.1` across `package.json`, `pbiviz.json`, and the
 blob path until a packaged-content change warrants a coordinated bump.
 
 ---
@@ -181,6 +181,14 @@ npm test
   the received dates may be incomplete, so **Grey days without data** automatically
   disables itself rather than mislabel real days as empty.
 - Relative presets are evaluated against the report's current date at render time.
+- **Non-contiguous multi-select serialisation.** Ctrl/⌘-click selections are applied
+  as a `BasicFilter ("In")` whose values are naive local wall-clock strings
+  (`2024-11-09T00:00:00`, no `Z`). Range selections use the UTC-relabelled half-open
+  form. The split is deliberate: an `In` filter matches by exact equality, so a
+  trailing `Z` is read as UTC and converted into the model timezone, never matching
+  the local-midnight DateTime stored in the column (this was the v1.0.0.1 fix). A
+  single `AdvancedFilter` cannot express a non-contiguous selection — `powerbi-models`
+  caps it at two conditions — so `BasicFilter` is the correct primitive here.
 - **Static/export contexts.** In PowerPoint export and email subscriptions the host
   reports `allowInteractions = false`; the slicer then renders its current state
   read-only (no clicks, drag, keyboard filtering, focus rings, or hover).

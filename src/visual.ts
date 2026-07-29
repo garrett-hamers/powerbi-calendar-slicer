@@ -390,9 +390,20 @@ export class Visual implements IVisual {
         if (value === undefined || value === null) {
             return null;
         }
-        const parsed = typeof value === "string"
-            ? parseDateWithoutTimezone(value)
-            : new Date(value);
+        if (typeof value === "string") {
+            // Naive / date-only strings (no timezone designator) — e.g. the
+            // "2024-03-15T00:00:00" form emitted by buildMultiDayFilter, or a
+            // bare "2024-03-15" — encode a wall-clock date directly. Parse the
+            // calendar fields as local so we don't double-shift them the way
+            // parseDateWithoutTimezone (tuned for the UTC "...Z" form) would.
+            const naive = /^(\d{4})-(\d{2})-(\d{2})(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?)?$/.exec(value);
+            if (naive) {
+                return new Date(Number(naive[1]), Number(naive[2]) - 1, Number(naive[3]));
+            }
+            const parsed = parseDateWithoutTimezone(value);
+            return isNaN(parsed.getTime()) ? null : startOfDay(parsed);
+        }
+        const parsed = new Date(value);
         return isNaN(parsed.getTime()) ? null : startOfDay(parsed);
     }
 

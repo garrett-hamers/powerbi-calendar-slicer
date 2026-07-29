@@ -125,6 +125,62 @@ describe("Atlyn Calendar Slicer visual", () => {
         expect(filter.conditions[1].operator).toBe("LessThan");
     });
 
+    it("applies a BasicFilter of naive-local values on Ctrl+click multi-select", () => {
+        const { visual, element, applied } = createVisual();
+        const dates = [new Date(2024, 10, 1), new Date(2024, 10, 30)];
+        visual.update(updateOptions(buildMockDataView({ dates })));
+
+        // Ctrl+click days 9, 11, 13, 15 — the non-contiguous case that shipped
+        // broken in v1.0.0.0 (BasicFilter values carried a UTC "Z" and matched
+        // nothing). PointerEvent isn't constructible in happy-dom, so set the
+        // modifier flag on a plain Event.
+        for (const day of [9, 11, 13, 15]) {
+            const cell = element.querySelector<HTMLElement>(
+                `.cs-day[data-key='2024-10-${day}']`
+            );
+            expect(cell).not.toBeNull();
+            const ev = new Event("pointerdown", { bubbles: true });
+            (ev as unknown as { ctrlKey: boolean }).ctrlKey = true;
+            cell!.dispatchEvent(ev);
+        }
+
+        const merges = applied.filter((a) => a.action === 0 /* merge */ && a.filter);
+        expect(merges.length).toBeGreaterThanOrEqual(1);
+        const filter = merges[merges.length - 1].filter as {
+            operator: string;
+            values: string[];
+        };
+        expect(filter.operator).toBe("In");
+        expect(filter.values).toEqual([
+            "2024-11-09T00:00:00",
+            "2024-11-11T00:00:00",
+            "2024-11-13T00:00:00",
+            "2024-11-15T00:00:00"
+        ]);
+        // The v1.0.0.0 defect: any value ending in "Z" is silently unmatchable.
+        for (const v of filter.values) {
+            expect(v.endsWith("Z")).toBe(false);
+        }
+    });
+
+    it("restores a non-contiguous selection from an inbound BasicFilter (bookmark)", () => {
+        const { visual, element } = createVisual();
+        const dates = [new Date(2024, 10, 1), new Date(2024, 10, 30)];
+        const jsonFilter = {
+            target: { table: "Calendar", column: "Date" },
+            operator: "In",
+            values: ["2024-11-09T00:00:00", "2024-11-13T00:00:00"]
+        };
+        visual.update(updateOptions(buildMockDataView({ dates }), [jsonFilter]));
+
+        const selected = Array.from(element.querySelectorAll(".cs-day.selected"));
+        expect(selected.length).toBe(2);
+        const keys = selected
+            .map((el) => el.getAttribute("data-key"))
+            .sort();
+        expect(keys).toEqual(["2024-10-13", "2024-10-9"]);
+    });
+
     it("removes the filter when Clear is pressed", () => {
         const { visual, element, applied } = createVisual();
         visual.update(updateOptions(buildMockDataView({ dates: [new Date(2024, 2, 1)] })));

@@ -63,6 +63,35 @@ export function serializeDate(date: Date): string {
     return new Date(getMillisecondsWithoutTimezone(date)).toISOString();
 }
 
+/**
+ * Serialise a date as a NAIVE local wall-clock ISO string with NO timezone
+ * designator, e.g. local midnight of 2024-03-15 -> "2024-03-15T00:00:00".
+ *
+ * Used ONLY for the discrete-value `BasicFilter ("In")` path, never for range
+ * boundaries. The distinction is load-bearing:
+ *
+ *   - A range boundary (`GreaterThanOrEqual` / `LessThan`) is compared
+ *     TOLERANTLY, so the UTC-relabelled `serializeDate` form
+ *     ("2024-03-15T00:00:00.000Z") brackets local-stored values correctly.
+ *   - An `In` filter requires EXACT equality against the model's stored value.
+ *     A trailing `Z` makes Power BI treat the value as UTC and convert it into
+ *     the model timezone before comparing, so the UTC-relabelled local midnight
+ *     never equals the local-midnight DateTime in the column and the filter
+ *     matches nothing (empty result). Emitting the bare wall clock keeps the
+ *     value in model-local time so exact equality holds.
+ *
+ * Because the fields are read off the LOCAL Date, the output is timezone
+ * invariant: local midnight of 2024-03-15 serialises to "2024-03-15T00:00:00"
+ * in every host timezone.
+ */
+export function serializeDateNaive(date: Date): string {
+    const pad = (n: number): string => String(n).padStart(2, "0");
+    return (
+        `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+        `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+    );
+}
+
 /** Build a local-midnight Date. */
 export function makeDate(year: number, month: number, day: number): Date {
     return new Date(year, month, day);

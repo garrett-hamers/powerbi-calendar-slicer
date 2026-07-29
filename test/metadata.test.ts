@@ -38,8 +38,8 @@ describe("submission metadata", () => {
         expect(pbiviz.visual.guid).toBe("calendarSlicerATLYN606CC6AF684C4BBA");
         expect(pbiviz.visual.name).toBe("atlynCalendarSlicer");
         expect(pbiviz.visual.displayName).toBe("Atlyn Calendar Slicer");
-        expect(pbiviz.visual.version).toBe("1.0.0.0");
-        expect(pbiviz.version).toBe("1.0.0.0");
+        expect(pbiviz.visual.version).toBe("1.0.0.1");
+        expect(pbiviz.version).toBe("1.0.0.1");
         expect(pbiviz.apiVersion).toBe("5.11.0");
         expect(pbiviz.visual.supportUrl).toBe("https://www.atlynco.com/docs/faq");
         expect(pbiviz.author.name).toBe("Atlyn");
@@ -48,7 +48,7 @@ describe("submission metadata", () => {
         expect(pbiviz.externalJS).toBeNull();
 
         expect(packageJson.name).toBe("calendar-slicer-visual");
-        expect(packageJson.version).toBe("1.0.0.0");
+        expect(packageJson.version).toBe("1.0.0.1");
         expect(packageJson.private).toBe(true);
     });
 
@@ -164,7 +164,7 @@ describe("submission metadata", () => {
         }
         expect(gitignore).toContain("dist/");
         expect(gitignore).toContain(".tmp/");
-        expect(readme).toContain("calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.0.pbiviz");
+        expect(readme).toContain("calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.1.pbiviz");
         expect(readme).toContain("Power_BI-API_5.11");
         expect(readme).toContain("npm run certify");
         expect(license).toContain("MIT License");

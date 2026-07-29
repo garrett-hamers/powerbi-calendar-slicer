@@ -60,17 +60,43 @@ describe("range filter", () => {
 });
 
 describe("multi-day basic filter", () => {
-    it("uses In with de-duplicated, sorted ISO values", () => {
+    it("uses In with de-duplicated, sorted naive-local values", () => {
         const f = buildMultiDayFilter(
             [makeDate(2024, 2, 15), makeDate(2024, 2, 1), makeDate(2024, 2, 15)],
             target
         );
         expect(f.operator).toBe("In");
         expect(f.values).toEqual([
-            "2024-03-01T00:00:00.000Z",
-            "2024-03-15T00:00:00.000Z"
+            "2024-03-01T00:00:00",
+            "2024-03-15T00:00:00"
         ]);
         expect(f.target).toEqual(target);
+    });
+
+    // Regression lock for the v1.0.0.1 empty-result bug: BasicFilter ("In")
+    // exact-matches a datetime column, so a trailing "Z" is read as UTC,
+    // converted into the model timezone, and never equals the local-midnight
+    // value stored in the column. The values MUST be naive local wall clock.
+    // This assertion fails against v1.0.0.0, which emitted "...T00:00:00.000Z".
+    it("emits naive local values with no UTC 'Z' designator", () => {
+        const f = buildMultiDayFilter([makeDate(2024, 2, 9), makeDate(2024, 2, 11)], target);
+        for (const v of f.values as string[]) {
+            expect(v.endsWith("Z")).toBe(false);
+            expect(v).toMatch(/^\d{4}-\d{2}-\d{2}T00:00:00$/);
+        }
+    });
+
+    // Each "In" value must denote the SAME calendar day that a single-day
+    // filter (the proven AdvancedFilter range path) lower-bounds, so a one-day
+    // multi-select and a single click filter to the identical day.
+    it("denotes the same local day as the single-day range lower bound", () => {
+        const day = makeDate(2024, 2, 15);
+        const multi = buildMultiDayFilter([day], target);
+        const single = buildDayFilter(day, target);
+        const multiDay = (multi.values[0] as string).slice(0, 10);
+        const singleLower = (single.conditions[0].value as string).slice(0, 10);
+        expect(multiDay).toBe("2024-03-15");
+        expect(multiDay).toBe(singleLower);
     });
 });
 

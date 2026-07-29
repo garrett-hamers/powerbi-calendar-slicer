@@ -13,6 +13,7 @@ import {
     makeDate,
     parseDateWithoutTimezone,
     serializeDate,
+    serializeDateNaive,
     startOfMonth,
     startOfNextMonth,
     startOfWeek,
@@ -42,6 +43,18 @@ describe("serialisation (host timezone)", () => {
     });
 });
 
+describe("naive serialisation (BasicFilter 'In' path)", () => {
+    it("serialises local midnight as a wall-clock string with no 'Z'", () => {
+        expect(serializeDateNaive(makeDate(2024, 2, 15))).toBe("2024-03-15T00:00:00");
+        expect(serializeDateNaive(makeDate(2024, 0, 1))).toBe("2024-01-01T00:00:00");
+        expect(serializeDateNaive(makeDate(2023, 11, 31))).toBe("2023-12-31T00:00:00");
+    });
+
+    it("never carries a UTC designator (would break exact-match In filters)", () => {
+        expect(serializeDateNaive(makeDate(2024, 5, 9)).endsWith("Z")).toBe(false);
+    });
+});
+
 /**
  * Real cross-timezone matrix. Each case spawns a fresh Node process with the TZ
  * environment variable pinned, so DST and half-hour offsets are genuinely
@@ -55,12 +68,17 @@ describe("timezone matrix", () => {
         const offset = (y, m, d) => new Date(y, m, d).getTimezoneOffset();
         const serialize = (dt) =>
             new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString();
+        const pad = (n) => String(n).padStart(2, "0");
+        const serializeNaive = (dt) =>
+            dt.getFullYear() + "-" + pad(dt.getMonth() + 1) + "-" + pad(dt.getDate()) +
+            "T" + pad(dt.getHours()) + ":" + pad(dt.getMinutes()) + ":" + pad(dt.getSeconds());
         const addDays = (dt, n) =>
             new Date(dt.getFullYear(), dt.getMonth(), dt.getDate() + n);
         const out = {
             offsetJan: offset(2024, 0, 15),
             offsetMar: offset(2024, 2, 15),
             midMarch: serialize(new Date(2024, 2, 15)),
+            midMarchNaive: serializeNaive(new Date(2024, 2, 15)),
             // 2024-03-10 is the US spring-forward day; constructor add must land
             // on local midnight of the 10th, not 23:00 of the 9th.
             dstAdd: serialize(addDays(new Date(2024, 2, 9), 1))
@@ -72,6 +90,7 @@ describe("timezone matrix", () => {
         offsetJan: number;
         offsetMar: number;
         midMarch: string;
+        midMarchNaive: string;
         dstAdd: string;
     } {
         const stdout = execFileSync(process.execPath, ["-e", probe], {
@@ -86,6 +105,7 @@ describe("timezone matrix", () => {
         expect(r.offsetJan).toBe(0);
         expect(r.offsetMar).toBe(0);
         expect(r.midMarch).toBe("2024-03-15T00:00:00.000Z");
+        expect(r.midMarchNaive).toBe("2024-03-15T00:00:00");
         expect(r.dstAdd).toBe("2024-03-10T00:00:00.000Z");
     });
 
@@ -94,6 +114,7 @@ describe("timezone matrix", () => {
         expect(r.offsetJan).toBe(480); // PST
         expect(r.offsetMar).toBe(420); // PDT (DST began 2024-03-10)
         expect(r.midMarch).toBe("2024-03-15T00:00:00.000Z");
+        expect(r.midMarchNaive).toBe("2024-03-15T00:00:00");
         expect(r.dstAdd).toBe("2024-03-10T00:00:00.000Z");
     });
 
@@ -102,6 +123,7 @@ describe("timezone matrix", () => {
         expect(r.offsetJan).toBe(-330); // UTC+5:30
         expect(r.offsetMar).toBe(-330);
         expect(r.midMarch).toBe("2024-03-15T00:00:00.000Z");
+        expect(r.midMarchNaive).toBe("2024-03-15T00:00:00");
         expect(r.dstAdd).toBe("2024-03-10T00:00:00.000Z");
     });
 });
