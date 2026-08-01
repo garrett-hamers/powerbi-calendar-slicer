@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import powerbi from "powerbi-visuals-api";
 import { Visual } from "../src/visual";
 import { buildEmptyDataView, buildMockDataView } from "./helpers/mockDataView";
+import { addDays, serializeDateNaive } from "../src/utils/dateMath";
 
 import VisualConstructorOptions = powerbi.extensibility.visual.VisualConstructorOptions;
 import VisualUpdateOptions = powerbi.extensibility.visual.VisualUpdateOptions;
@@ -107,6 +108,16 @@ describe("Atlyn Calendar Slicer visual", () => {
             dates: [2024, 2025],
             dateType: "numeric",
             dateQueryName: "Calendar.Date Hierarchy.Year"
+        })));
+        expect(element.querySelector(".cs-landing")?.textContent).toContain("hierarchies");
+        expect(element.querySelector(".cs-grid")).toBeNull();
+    });
+
+    it("rejects a DateTime hierarchy path without a literal hierarchy label", () => {
+        const { visual, element } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 1)],
+            dateQueryName: "Calendar.Fiscal.Date"
         })));
         expect(element.querySelector(".cs-landing")?.textContent).toContain("hierarchies");
         expect(element.querySelector(".cs-grid")).toBeNull();
@@ -493,6 +504,95 @@ describe("Atlyn Calendar Slicer visual", () => {
         element.querySelector<HTMLElement>(".atlynCalendarSlicer")!.dispatchEvent(up);
 
         expect(applied.filter((entry) => entry.action === 0)).toHaveLength(0);
+    });
+
+    it("owns a gesture by pointerId and ignores competing move/up/cancel events", () => {
+        const { visual, element, applied } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 10), new Date(2024, 2, 15)]
+        })));
+
+        const first = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-10']")!;
+        const down = new Event("pointerdown", { bubbles: true });
+        Object.assign(down, { pointerType: "mouse", pointerId: 1, button: 0 });
+        first.dispatchEvent(down);
+
+        const competing = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-15']")!;
+        const secondDown = new Event("pointerdown", { bubbles: true });
+        Object.assign(secondDown, { pointerType: "mouse", pointerId: 2, button: 0 });
+        competing.dispatchEvent(secondDown);
+        const secondMove = new Event("pointermove", { bubbles: true });
+        Object.assign(secondMove, { pointerType: "mouse", pointerId: 2 });
+        competing.dispatchEvent(secondMove);
+        const secondCancel = new Event("pointercancel", { bubbles: true });
+        Object.assign(secondCancel, { pointerType: "mouse", pointerId: 2 });
+        element.querySelector<HTMLElement>(".atlynCalendarSlicer")!.dispatchEvent(secondCancel);
+        const secondUp = new Event("pointerup", { bubbles: true });
+        Object.assign(secondUp, { pointerType: "mouse", pointerId: 2 });
+        element.querySelector<HTMLElement>(".atlynCalendarSlicer")!.dispatchEvent(secondUp);
+
+        expect(applied.filter((entry) => entry.action === 0)).toHaveLength(0);
+        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(1);
+
+        const ownerUp = new Event("pointerup", { bubbles: true });
+        Object.assign(ownerUp, { pointerType: "mouse", pointerId: 1 });
+        element.querySelector<HTMLElement>(".atlynCalendarSlicer")!.dispatchEvent(ownerUp);
+        expect(applied.filter((entry) => entry.action === 0)).toHaveLength(1);
+        expect(element.querySelector(".cs-day[data-key='2024-2-15']")!
+            .classList.contains("selected")).toBe(false);
+    });
+
+    it("announces both endpoints after a range selection", () => {
+        const { visual, element } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 10), new Date(2024, 2, 15)]
+        })));
+
+        element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-10']")!
+            .dispatchEvent(new Event("pointerdown", { bubbles: true }));
+        element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-15']")!
+            .dispatchEvent(new Event("pointermove", { bubbles: true }));
+        element.querySelector<HTMLElement>(".atlynCalendarSlicer")!
+            .dispatchEvent(new Event("pointerup", { bubbles: true }));
+
+        const announcement = element.querySelector("#cs-live-status")?.textContent || "";
+        expect(announcement).toContain("March 10, 2024");
+        expect(announcement).toContain("March 15, 2024");
+    });
+
+    it("keeps a 5,000-day selection synchronized at the limit", () => {
+        const { visual, element, applied } = createVisual();
+        const start = new Date(2020, 0, 1);
+        const values = Array.from({ length: 4999 }, (_, index) =>
+            serializeDateNaive(addDays(start, index))
+        );
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2100, 0, 1)],
+            objects: { general: { visibleYear: 2100, visibleMonth: 0 } }
+        }), [{
+            target: { table: "Calendar", column: "Date" },
+            operator: "In",
+            values
+        }]));
+
+        const first = element.querySelector<HTMLElement>(".cs-day[data-key='2100-0-1']")!;
+        const addAtLimit = new Event("pointerdown", { bubbles: true });
+        Object.assign(addAtLimit, { ctrlKey: true, button: 0 });
+        first.dispatchEvent(addAtLimit);
+        expect(applied.filter((entry) => entry.action === 0)).toHaveLength(1);
+        expect(element.querySelector<HTMLElement>(".cs-day[data-key='2100-0-1']")
+            ?.classList.contains("selected")).toBe(true);
+        expect(element.querySelector("#cs-live-status")?.textContent)
+            .toContain("5,000");
+
+        const second = element.querySelector<HTMLElement>(".cs-day[data-key='2100-0-2']")!;
+        const overLimit = new Event("pointerdown", { bubbles: true });
+        Object.assign(overLimit, { ctrlKey: true, button: 0 });
+        second.dispatchEvent(overLimit);
+        expect(applied.filter((entry) => entry.action === 0)).toHaveLength(1);
+        expect(second.classList.contains("selected")).toBe(false);
+        expect(element.querySelector("#cs-live-status")?.textContent)
+            .toContain("5,000");
     });
 
     it("uses data-point and empty-space SelectionIds without filtering on context menus", () => {

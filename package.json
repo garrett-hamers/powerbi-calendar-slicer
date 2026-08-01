@@ -1,7 +1,7 @@
 {
     "name": "calendar-slicer-visual",
     "description": "Atlyn Calendar Slicer for Power BI",
-    "version": "1.0.0.3",
+    "version": "1.0.0.4",
     "private": true,
     "repository": {
         "type": "git",

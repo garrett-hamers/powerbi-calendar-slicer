@@ -25,6 +25,14 @@ describe("targetFromQueryName", () => {
         expect(targetFromQueryName("Calendar.Date Hierarchy.Date", "Renamed Date")).toBeNull();
     });
 
+    it("rejects extra semantic path separators without relying on a hierarchy label", () => {
+        expect(targetFromQueryName("Calendar.Fiscal.Date")).toBeNull();
+    });
+
+    it("rejects case-insensitive hierarchy variants", () => {
+        expect(targetFromQueryName("Calendar.Date hIeRaRcHy.Month")).toBeNull();
+    });
+
     it("ignores a localized or renamed display caption", () => {
         expect(targetFromQueryName("Calendar.Date", "Datum")).toEqual({
             table: "Calendar",

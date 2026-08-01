@@ -59,11 +59,15 @@ export function targetFromQueryName(
         return null;
     }
     const dot = queryName.indexOf(".");
+    const column = queryName.slice(dot + 1);
+    // A concrete column query name has exactly one semantic separator
+    // (`Table.Column`). Extra separators represent a hierarchy/path level, even
+    // when Power BI does not spell the word "Hierarchy" in the query name.
     if (dot <= 0 || dot === queryName.length - 1 ||
-        /hierarchy/i.test(queryName.slice(dot + 1))) {
+        column.includes(".") ||
+        /hierarchy/i.test(column)) {
         return null;
     }
-    const column = queryName.slice(dot + 1);
     if (!column) {
         return null;
     }

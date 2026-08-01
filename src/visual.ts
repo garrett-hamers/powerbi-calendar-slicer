@@ -749,15 +749,13 @@ export class Visual implements IVisual {
 
     private onDayPointerDown(date: Date, event: PointerEvent): void {
         if (!this.interactive ||
+            this.pointerMode !== "idle" ||
             (typeof event.button === "number" && event.button !== 0)) {
             return;
         }
         const previousPreset = this.activePreset;
         const previousAnchor = this.dragAnchor;
         const previousFocusedDate = this.focusedDate;
-        this.activePreset = null;
-        this.focusedDate = date;
-        this.ensureVisible(date);
 
         const multiSelectEnabled = this.formattingSettings.interactionCard.multiSelect.value;
 
@@ -765,6 +763,9 @@ export class Visual implements IVisual {
             if (!this.toggleDay(date)) {
                 return;
             }
+            this.activePreset = null;
+            this.focusedDate = date;
+            this.ensureVisible(date);
             this.dragAnchor = null;
             event.preventDefault();
             this.applySelection();
@@ -773,6 +774,10 @@ export class Visual implements IVisual {
             this.renderCalendar();
             return;
         }
+
+        this.activePreset = null;
+        this.focusedDate = date;
+        this.ensureVisible(date);
 
         if (event.shiftKey && this.dragAnchor) {
             event.preventDefault();
@@ -820,6 +825,9 @@ export class Visual implements IVisual {
     }
 
     private onRootPointerMove(event: PointerEvent): void {
+        if (!this.ownsActivePointer(event)) {
+            return;
+        }
         if (this.pointerMode === "touch-pending") {
             const dx = Math.abs((Number.isFinite(event.clientX) ? event.clientX : this.pointerStartX) -
                 this.pointerStartX);
@@ -853,6 +861,9 @@ export class Visual implements IVisual {
     }
 
     private endDrag(event?: PointerEvent): void {
+        if (event && !this.ownsActivePointer(event)) {
+            return;
+        }
         if (this.pointerMode === "touch-pending" && this.dragAnchor) {
             event?.preventDefault();
             const date = this.dragAnchor;
@@ -885,7 +896,8 @@ export class Visual implements IVisual {
     }
 
     private cancelDrag(event?: PointerEvent, preventDefault = false): void {
-        if (this.pointerMode === "idle") {
+        if (this.pointerMode === "idle" ||
+            (event && !this.ownsActivePointer(event))) {
             return;
         }
         if (preventDefault) {
@@ -918,6 +930,18 @@ export class Visual implements IVisual {
         this.capturePointer();
         this.setSelection({ type: "range", start: date, end: date });
         this.renderCalendar();
+    }
+
+    private ownsActivePointer(event: PointerEvent): boolean {
+        if (this.pointerMode === "idle") {
+            return true;
+        }
+        // Synthetic test events and a few older hosts omit pointerId. They are
+        // safe to pair only while the active gesture also has no pointer id;
+        // real concurrent pointers always carry distinct numeric ids.
+        return this.pointerId === null
+            ? typeof event.pointerId !== "number"
+            : event.pointerId === this.pointerId;
     }
 
     private scheduleTouchDrag(date: Date): void {
@@ -982,20 +1006,23 @@ export class Visual implements IVisual {
     }
 
     private toggleDay(date: Date): boolean {
-        if (this.selection.type === "range" &&
-            this.rangeExceedsDiscreteLimit(this.selection.start, this.selection.end)) {
-            this.announce(this.localize(
-                "Selection_Limit",
-                "A discrete selection is limited to 5,000 dates; the contiguous range was kept"
-            ));
-            return false;
-        }
         const days: Date[] = this.selection.type === "days"
             ? [...this.selection.days]
             : this.selection.type === "range"
                 ? this.rangeDays(this.selection.start, this.selection.end)
                 : [];
         const idx = days.findIndex((d) => isSameDay(d, date));
+        if (idx < 0 && (
+            (this.selection.type === "range" &&
+                this.rangeExceedsDiscreteLimit(this.selection.start, this.selection.end)) ||
+            days.length >= MAX_DISCRETE_DAYS
+        )) {
+            this.announce(this.localize(
+                "Selection_Limit",
+                "A discrete selection is limited to 5,000 dates; the contiguous range was kept"
+            ));
+            return false;
+        }
         if (idx >= 0) {
             days.splice(idx, 1);
         } else {
@@ -1082,15 +1109,17 @@ export class Visual implements IVisual {
         if (!this.focusedDate || this.isDateDisabled(this.focusedDate)) {
             return;
         }
-        this.activePreset = null;
         const multiSelectEnabled = this.formattingSettings.interactionCard.multiSelect.value;
         if ((event.ctrlKey || event.metaKey) && multiSelectEnabled) {
             if (!this.toggleDay(this.focusedDate)) {
                 return;
             }
+            this.activePreset = null;
         } else if (event.shiftKey && this.dragAnchor) {
+            this.activePreset = null;
             this.setSelection(this.rangeBetween(this.dragAnchor, this.focusedDate));
         } else {
+            this.activePreset = null;
             this.dragAnchor = this.focusedDate;
             this.setSelection({
                 type: "range",
@@ -1534,11 +1563,19 @@ export class Visual implements IVisual {
             return this.localize("Selection_None", "No dates selected");
         }
         if (this.selection.type === "range") {
+            if (!isSameDay(this.selection.start, this.selection.end)) {
+                return this.localize("Selection_Range", "Selected from {0} through {1}")
+                    .replace("{0}", this.dayLabel(this.selection.start))
+                    .replace("{1}", this.dayLabel(this.selection.end));
+            }
             return this.localize("Selection_One", "Selected {0}")
                 .replace("{0}", this.dayLabel(this.selection.start));
         }
         return this.localize("Selection_Many", "Selected {0} dates")
-            .replace("{0}", String(this.selection.days.length));
+            .replace(
+                "{0}",
+                new Intl.NumberFormat(this.locale).format(this.selection.days.length)
+            );
     }
 
     private announce(message: string): void {

@@ -76,6 +76,7 @@
     "Data_Truncated": "Only the first 30,000 dates are available; empty-day indicators are disabled because the data may be incomplete",
     "Selection_None": "No dates selected",
     "Selection_One": "Selected {0}",
+    "Selection_Range": "Selected from {0} through {1}",
     "Selection_Many": "Selected {0} dates",
     "Selection_Limit": "A discrete selection is limited to 5,000 dates; the contiguous range was kept",
 
