@@ -1,6 +1,6 @@
 {
     "privileges": [],
-    "supportsHighlight": true,
+    "supportsHighlight": false,
     "supportsKeyboardFocus": true,
     "supportsSynchronizingFilterState": true,
     "supportsLandingPage": true,

@@ -40,11 +40,14 @@ import { addDays, serializeDate, serializeDateNaive, startOfDay } from "./utils/
 export type FilterTarget = IFilterColumnTarget;
 
 /**
- * Derive a column filter target from a categorical column `queryName`. Power BI
- * query names are `Table.Column` (or `Table.Hierarchy.Level`); the table is the
- * part before the first dot, the column is the remainder.
+ * Derive a concrete column filter target from a categorical column. Power BI
+ * query names identify the table; the source display name identifies the
+ * concrete hierarchy level/column, matching Microsoft's Filter API guidance.
  */
-export function targetFromQueryName(queryName: string): FilterTarget | null {
+export function targetFromQueryName(
+    queryName: string,
+    columnDisplayName?: string
+): FilterTarget | null {
     if (!queryName) {
         return null;
     }
@@ -52,9 +55,13 @@ export function targetFromQueryName(queryName: string): FilterTarget | null {
     if (dot <= 0 || dot === queryName.length - 1) {
         return null;
     }
+    const column = columnDisplayName?.trim() || queryName.slice(dot + 1);
+    if (!column) {
+        return null;
+    }
     return {
         table: queryName.slice(0, dot),
-        column: queryName.slice(dot + 1)
+        column
     };
 }
 
