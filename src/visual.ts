@@ -22,6 +22,7 @@ import {
     buildMultiDayFilter,
     buildRangeFilter,
     FilterTarget,
+    MAX_DISCRETE_DAYS,
     targetFromQueryName
 } from "./dateFilter";
 import { PRESETS, PresetContext, presetByKey } from "./presets";
@@ -59,6 +60,8 @@ const REMOVE_FILTER_ACTION: powerbi.FilterAction.remove = 1;
 // data-completeness features (e.g. "grey days without data") are suppressed to
 // avoid mislabelling real days as empty.
 const DATA_REDUCTION_COUNT = 30000;
+const TOUCH_DRAG_THRESHOLD = 8;
+const TOUCH_LONG_PRESS_MS = 450;
 
 interface VisibleMonth {
     year: number;
@@ -75,6 +78,8 @@ interface FocusSnapshot {
     controlId?: string;
 }
 
+type PointerMode = "idle" | "touch-pending" | "dragging";
+
 export class Visual implements IVisual {
     private readonly target: HTMLElement;
     private readonly root: HTMLElement;
@@ -82,6 +87,7 @@ export class Visual implements IVisual {
     private readonly selectionManager: ISelectionManager;
     private readonly localizationManager: ILocalizationManager;
     private readonly formattingSettingsService: FormattingSettingsService;
+    private readonly selectionIdBuilder: powerbi.visuals.ISelectionIdBuilder | null;
     private formattingSettings: VisualFormattingSettingsModel;
 
     /**
@@ -101,6 +107,8 @@ export class Visual implements IVisual {
     private readonly locale: string;
 
     private filterTarget: FilterTarget | null = null;
+    private dataCategory: DataViewCategoryColumn | null = null;
+    private readonly dataPointIds = new Map<string, powerbi.visuals.ISelectionId>();
     private dataMin: Date | null = null;
     private dataMax: Date | null = null;
     /** Per-day aggregated measure values, keyed by day key. */
@@ -115,6 +123,7 @@ export class Visual implements IVisual {
     private dataTruncated = false;
 
     private selection: Selection = { type: "none" };
+    private readonly selectedDayKeys = new Set<string>();
     private activePreset: string | null = null;
     private visible: VisibleMonth | null = null;
     private focusedDate: Date | null = null;
@@ -122,6 +131,27 @@ export class Visual implements IVisual {
     /** Drag state shared by mouse, pen, and touch pointers. */
     private dragAnchor: Date | null = null;
     private isDragging = false;
+    private pointerMode: PointerMode = "idle";
+    private pointerId: number | null = null;
+    private pointerType = "";
+    private pointerStartX = 0;
+    private pointerStartY = 0;
+    private touchTimer: ReturnType<typeof setTimeout> | null = null;
+    private dragSelectionBefore: Selection | null = null;
+    private dragActivePresetBefore: string | null = null;
+    private dragAnchorBefore: Date | null = null;
+    private dragFocusedDateBefore: Date | null = null;
+    private pendingAnnouncement = "";
+    private destroyed = false;
+
+    private readonly rootPointerMoveHandler = (event: PointerEvent): void =>
+        this.onRootPointerMove(event);
+    private readonly rootPointerUpHandler = (event: PointerEvent): void =>
+        this.endDrag(event);
+    private readonly rootPointerCancelHandler = (event: PointerEvent): void =>
+        this.cancelDrag(event);
+    private readonly rootPointerLeaveHandler = (event: PointerEvent): void =>
+        this.cancelDrag(event);
 
     constructor(options: VisualConstructorOptions) {
         this.target = options.element;
@@ -129,6 +159,12 @@ export class Visual implements IVisual {
         this.locale = this.host.locale || "en-US";
         this.selectionManager = this.host.createSelectionManager();
         this.localizationManager = this.host.createLocalizationManager();
+        const hostWithSelectionBuilder = this.host as IVisualHost & {
+            createSelectionIdBuilder?: () => powerbi.visuals.ISelectionIdBuilder;
+        };
+        this.selectionIdBuilder = typeof hostWithSelectionBuilder.createSelectionIdBuilder === "function"
+            ? hostWithSelectionBuilder.createSelectionIdBuilder()
+            : null;
         this.formattingSettingsService =
             new FormattingSettingsService(this.localizationManager);
         this.formattingSettings = new VisualFormattingSettingsModel();
@@ -137,10 +173,10 @@ export class Visual implements IVisual {
         this.root.className = "atlynCalendarSlicer";
         this.target.appendChild(this.root);
 
-        this.root.addEventListener("pointermove", (event) => this.onRootPointerMove(event));
-        this.root.addEventListener("pointerup", () => this.endDrag());
-        this.root.addEventListener("pointercancel", () => this.endDrag());
-        this.root.addEventListener("pointerleave", () => this.endDrag());
+        this.root.addEventListener("pointermove", this.rootPointerMoveHandler);
+        this.root.addEventListener("pointerup", this.rootPointerUpHandler);
+        this.root.addEventListener("pointercancel", this.rootPointerCancelHandler);
+        this.root.addEventListener("pointerleave", this.rootPointerLeaveHandler);
     }
 
     /**
@@ -169,21 +205,40 @@ export class Visual implements IVisual {
     }
 
     public update(options: VisualUpdateOptions): void {
+        if (this.destroyed) {
+            return;
+        }
         this.host.eventService?.renderingStarted(options);
         try {
             this.resolveThemeColors();
             this.interactive = this.host.hostCapabilities?.allowInteractions !== false;
             this.root.classList.toggle("read-only", !this.interactive);
             const dataView: DataView | undefined = options.dataViews?.[0];
-            this.formattingSettings =
-                this.formattingSettingsService.populateFormattingSettingsModel(
-                    VisualFormattingSettingsModel,
-                    dataView
-                );
+            if (dataView) {
+                this.formattingSettings =
+                    this.formattingSettingsService.populateFormattingSettingsModel(
+                        VisualFormattingSettingsModel,
+                        dataView
+                    );
+            }
+
+            // Power BI sends resize/style/view-mode/formatting updates without a
+            // DataView. Those updates must repaint the existing model, not turn a
+            // bound visual into an unbound landing page.
+            const isDataUpdate = typeof options.type === "number"
+                ? (options.type & (1 << 1)) !== 0
+                : options.dataViews !== undefined;
+            if (!isDataUpdate) {
+                if (this.filterTarget && this.dataMin && this.dataMax) {
+                    this.renderCalendar();
+                }
+                this.host.eventService?.renderingFinished(options);
+                return;
+            }
 
             const category = dataView?.categorical?.categories?.[0];
             if (!category) {
-                this.filterTarget = null;
+                this.clearBoundState();
                 this.renderLanding(
                     this.localize("Landing_AddField", "Add a date field to the Date bucket")
                 );
@@ -192,30 +247,30 @@ export class Visual implements IVisual {
             }
 
             if (!this.isDateColumn(category)) {
-                this.filterTarget = null;
+                this.clearBoundState();
                 this.renderLanding(this.localize(
                     "Landing_BadType",
-                    "The Date field must be a date column or a date hierarchy level"
+                    "The Date field must be a concrete Date/DateTime column; date hierarchies are not supported"
                 ));
                 this.host.eventService?.renderingFinished(options);
                 return;
             }
 
             this.filterTarget = targetFromQueryName(
-                category.source.queryName || "",
-                category.source.displayName
+                category.source.queryName || ""
             );
             if (!this.filterTarget) {
+                this.clearBoundState();
                 this.renderLanding(this.localize(
                     "Landing_BadType",
-                    "The Date field must be a date column or a date hierarchy level"
+                    "The Date field must be a concrete Date/DateTime column; date hierarchies are not supported"
                 ));
                 this.host.eventService?.renderingFinished(options);
                 return;
             }
             this.parseData(dataView, category);
             if (!this.dataMin || !this.dataMax) {
-                this.selection = { type: "none" };
+                this.setSelection({ type: "none" });
                 this.activePreset = null;
                 this.renderLanding(this.localize(
                     "Landing_NoDates",
@@ -257,35 +312,62 @@ export class Visual implements IVisual {
         return this.formattingSettingsService.buildFormattingModel(this.formattingSettings);
     }
 
+    public destroy(): void {
+        if (this.destroyed) {
+            return;
+        }
+        this.destroyed = true;
+        this.clearTouchState();
+        this.root.removeEventListener("pointermove", this.rootPointerMoveHandler);
+        this.root.removeEventListener("pointerup", this.rootPointerUpHandler);
+        this.root.removeEventListener("pointercancel", this.rootPointerCancelHandler);
+        this.root.removeEventListener("pointerleave", this.rootPointerLeaveHandler);
+        this.dataPointIds.clear();
+        this.dataCategory = null;
+        this.clear();
+        this.pendingAnnouncement = "";
+    }
+
     // ---- data parsing ---------------------------------------------------
+
+    private clearBoundState(): void {
+        this.filterTarget = null;
+        this.dataCategory = null;
+        this.dataPointIds.clear();
+        this.dataMin = null;
+        this.dataMax = null;
+        this.dataValues.clear();
+        this.dataTruncated = false;
+        this.hasValues = false;
+        this.setSelection({ type: "none" });
+        this.activePreset = null;
+        this.visible = null;
+        this.focusedDate = null;
+        this.dragAnchor = null;
+        this.clearTouchState();
+    }
 
     private isDateColumn(category: DataViewCategoryColumn): boolean {
         const type = category.source.type as
             | { dateTime?: boolean; numeric?: boolean; integer?: boolean }
             | undefined;
-        if (type?.dateTime) {
-            return true;
-        }
-        if (type?.numeric || type?.integer) {
-            const values = category.values?.filter(
-                (value): value is number => typeof value === "number"
-            ) ?? [];
-            return values.length > 0 &&
-                values.every((value) => Number.isInteger(value) && value >= 1000 && value <= 9999);
-        }
-        // Fall back to inspecting the first non-null value.
-        const first = category.values?.find((v) => v !== null && v !== undefined);
-        return first instanceof Date;
+        // Date hierarchy levels and automatic numeric levels do not identify the
+        // concrete source column required by a column filter. Only Date/DateTime
+        // metadata is supported.
+        return type?.dateTime === true;
     }
 
     private parseData(dataView: DataView | undefined, category: DataViewCategoryColumn): void {
         let min: Date | null = null;
         let max: Date | null = null;
+        this.dataCategory = category;
+        this.dataPointIds.clear();
         this.dataValues = new Map<string, number>();
         this.hasValues = false;
 
         const raws = category.values || [];
-        this.dataTruncated = raws.length >= DATA_REDUCTION_COUNT;
+        this.dataTruncated = raws.length >= DATA_REDUCTION_COUNT ||
+            dataView?.metadata?.segment !== undefined;
 
         const values = dataView?.categorical?.values?.[0];
         const measures = values?.values;
@@ -295,6 +377,20 @@ export class Visual implements IVisual {
             const date = this.coerceDate(raws[i]);
             if (!date) {
                 continue;
+            }
+            if (this.selectionIdBuilder) {
+                try {
+                    const selectionId = this.selectionIdBuilder
+                        .withCategory(category, i)
+                        .createSelectionId();
+                    if (!this.dataPointIds.has(this.dayKey(date))) {
+                        this.dataPointIds.set(this.dayKey(date), selectionId);
+                    }
+                } catch {
+                    // A host may omit category identities in an empty/mock view.
+                    // Date filtering remains usable; context menus use empty-space
+                    // semantics when no data-point identity is available.
+                }
             }
             if (!min || date < min) {
                 min = date;
@@ -337,10 +433,6 @@ export class Visual implements IVisual {
             return isNaN(raw.getTime()) ? null : startOfDay(raw);
         }
         if (typeof raw === "number") {
-            // A bare year from a date hierarchy's Year level.
-            if (Number.isInteger(raw) && raw >= 1000 && raw <= 9999) {
-                return makeDate(raw, 0, 1);
-            }
             return null;
         }
         if (typeof raw === "string") {
@@ -399,7 +491,7 @@ export class Visual implements IVisual {
             ? this.selectionFromFilter(filter, persistedPreset)
             : null;
 
-        this.selection = restored?.selection ?? { type: "none" };
+        this.setSelection(restored?.selection ?? { type: "none" });
         this.activePreset = restored?.preset ?? null;
         this.dragAnchor = this.selection.type === "range" ? this.selection.start : null;
     }
@@ -601,15 +693,23 @@ export class Visual implements IVisual {
             this.host.applyJsonFilter(filter, "general", "filter", MERGE_FILTER_ACTION);
             return;
         }
+        if (this.selection.days.length > MAX_DISCRETE_DAYS) {
+            this.announce(this.localize(
+                "Selection_Limit",
+                "A discrete selection is limited to 5,000 dates; the contiguous range was kept"
+            ));
+            return;
+        }
         const multi = buildMultiDayFilter(this.selection.days, this.filterTarget);
         this.host.applyJsonFilter(multi, "general", "filter", MERGE_FILTER_ACTION);
     }
 
     private clearSelection(): void {
-        this.selection = { type: "none" };
+        this.setSelection({ type: "none" });
         this.activePreset = null;
         this.dragAnchor = null;
         this.applySelection();
+        this.announce(this.localize("Selection_None", "No dates selected"));
         this.persistVisibleMonth();
         this.renderCalendar();
     }
@@ -630,15 +730,16 @@ export class Visual implements IVisual {
         };
         const result = preset.compute(ctx);
         this.activePreset = key;
-        this.selection = {
+        this.setSelection({
             type: "range",
             start: result.start,
             end: addDays(result.endExclusive, -1)
-        };
+        });
         this.dragAnchor = result.start;
         this.focusedDate = result.start;
         this.moveVisibleTo(result.start);
         this.host.applyJsonFilter(result.filter, "general", "filter", MERGE_FILTER_ACTION);
+        this.announce(this.selectionStatus());
         this.persistVisibleMonth();
         this.renderCalendar();
     }
@@ -646,53 +747,104 @@ export class Visual implements IVisual {
     // ---- interaction ----------------------------------------------------
 
     private onDayPointerDown(date: Date, event: PointerEvent): void {
-        if (!this.interactive) {
+        if (!this.interactive ||
+            this.pointerMode !== "idle" ||
+            (typeof event.button === "number" && event.button !== 0)) {
             return;
         }
-        event.preventDefault();
-        this.activePreset = null;
-        this.focusedDate = date;
-        this.ensureVisible(date);
+        const previousPreset = this.activePreset;
+        const previousAnchor = this.dragAnchor;
+        const previousFocusedDate = this.focusedDate;
 
         const multiSelectEnabled = this.formattingSettings.interactionCard.multiSelect.value;
 
         if ((event.ctrlKey || event.metaKey) && multiSelectEnabled) {
-            this.toggleDay(date);
+            if (!this.toggleDay(date)) {
+                return;
+            }
+            this.activePreset = null;
+            this.focusedDate = date;
+            this.ensureVisible(date);
             this.dragAnchor = null;
+            event.preventDefault();
             this.applySelection();
+            this.announce(this.selectionStatus());
             this.persistVisibleMonth();
             this.renderCalendar();
             return;
         }
+
+        this.activePreset = null;
+        this.focusedDate = date;
+        this.ensureVisible(date);
 
         if (event.shiftKey && this.dragAnchor) {
-            this.selection = this.rangeBetween(this.dragAnchor, date);
+            event.preventDefault();
+            this.setSelection(this.rangeBetween(this.dragAnchor, date));
             this.applySelection();
+            this.announce(this.selectionStatus());
             this.persistVisibleMonth();
             this.renderCalendar();
             return;
         }
 
-        // Begin a drag range anchored on this day (a plain click is a zero-length drag).
+        const pointerType = event.pointerType || "";
+        this.pointerType = pointerType;
+        this.pointerId = typeof event.pointerId === "number" ? event.pointerId : null;
+        this.dragActivePresetBefore = previousPreset;
+        this.dragAnchorBefore = previousAnchor;
+        this.dragFocusedDateBefore = previousFocusedDate;
         this.dragAnchor = date;
-        this.isDragging = true;
-        this.selection = { type: "range", start: date, end: date };
-        this.renderCalendar();
+        this.dragSelectionBefore = this.selection;
+        if (pointerType === "touch") {
+            this.pointerMode = "touch-pending";
+            this.pointerStartX = Number.isFinite(event.clientX) ? event.clientX : 0;
+            this.pointerStartY = Number.isFinite(event.clientY) ? event.clientY : 0;
+            this.scheduleTouchDrag(date);
+            return;
+        }
+
+        // Mouse/pen starts a range immediately. A plain click is a zero-length
+        // range; touch waits for a movement threshold or long press so vertical
+        // scrolling is not hijacked.
+        event.preventDefault();
+        this.startDrag(date, event);
     }
 
-    private onDayPointerEnter(date: Date): void {
-        if (!this.isDragging || !this.dragAnchor) {
+    private onDayPointerEnter(date: Date, event: PointerEvent): void {
+        if (!this.isDragging || !this.dragAnchor ||
+            !this.ownsActivePointer(event)) {
             return;
         }
         if (this.focusedDate && isSameDay(this.focusedDate, date)) {
             return;
         }
-        this.selection = this.rangeBetween(this.dragAnchor, date);
+        this.setSelection(this.rangeBetween(this.dragAnchor, date));
         this.focusedDate = date;
         this.renderCalendar();
     }
 
     private onRootPointerMove(event: PointerEvent): void {
+        if (!this.ownsActivePointer(event)) {
+            return;
+        }
+        if (this.pointerMode === "touch-pending") {
+            const dx = Math.abs((Number.isFinite(event.clientX) ? event.clientX : this.pointerStartX) -
+                this.pointerStartX);
+            const dy = Math.abs((Number.isFinite(event.clientY) ? event.clientY : this.pointerStartY) -
+                this.pointerStartY);
+            const hasCoordinates = Number.isFinite(event.clientX) &&
+                Number.isFinite(event.clientY);
+            if (hasCoordinates && dy >= TOUCH_DRAG_THRESHOLD && dy > dx) {
+                this.cancelDrag(event);
+                return;
+            }
+            if (!hasCoordinates || Math.max(dx, dy) >= TOUCH_DRAG_THRESHOLD) {
+                this.startDrag(this.dragAnchor, event);
+            } else {
+                return;
+            }
+        }
         if (!this.isDragging) {
             return;
         }
@@ -704,32 +856,184 @@ export class Visual implements IVisual {
         const date = hit?.dataset.key ? this.dateFromDayKey(hit.dataset.key) : null;
         if (date && !this.isDateDisabled(date)) {
             event.preventDefault();
-            this.onDayPointerEnter(date);
+            this.onDayPointerEnter(date, event);
         }
     }
 
-    private endDrag(): void {
+    private endDrag(event?: PointerEvent): void {
+        if (event && !this.ownsActivePointer(event)) {
+            return;
+        }
+        if (this.pointerMode === "touch-pending" && this.dragAnchor) {
+            event?.preventDefault();
+            const date = this.dragAnchor;
+            this.clearTouchState();
+            this.setSelection({ type: "range", start: date, end: date });
+            this.activePreset = null;
+            this.dragAnchor = date;
+            this.applySelection();
+            this.announce(this.selectionStatus());
+            this.persistVisibleMonth();
+            this.renderCalendar();
+            return;
+        }
         if (!this.isDragging) {
             return;
         }
+        event?.preventDefault();
+        this.releasePointer();
         this.isDragging = false;
+        this.pointerMode = "idle";
+        this.pointerId = null;
+        this.pointerType = "";
+        this.dragSelectionBefore = null;
+        this.dragActivePresetBefore = null;
+        this.dragAnchorBefore = null;
+        this.dragFocusedDateBefore = null;
         this.applySelection();
+        this.announce(this.selectionStatus());
         this.persistVisibleMonth();
     }
 
-    private toggleDay(date: Date): void {
+    private cancelDrag(event?: PointerEvent, preventDefault = false): void {
+        if (this.pointerMode === "idle" ||
+            (event && !this.ownsActivePointer(event))) {
+            return;
+        }
+        if (preventDefault) {
+            event?.preventDefault();
+        }
+        const previous = this.dragSelectionBefore;
+        const previousPreset = this.dragActivePresetBefore;
+        const previousAnchor = this.dragAnchorBefore;
+        const previousFocusedDate = this.dragFocusedDateBefore;
+        this.clearTouchState();
+        if (previous) {
+            this.setSelection(previous);
+        }
+        this.activePreset = previousPreset;
+        this.dragAnchor = previousAnchor;
+        this.focusedDate = previousFocusedDate;
+        if (this.filterTarget && this.dataMin && this.dataMax) {
+            this.renderCalendar();
+        }
+    }
+
+    private startDrag(date: Date | null, event: PointerEvent): void {
+        if (!date) {
+            return;
+        }
+        this.clearTouchTimer();
+        this.pointerMode = "dragging";
+        this.isDragging = true;
+        event.preventDefault();
+        this.capturePointer();
+        this.setSelection({ type: "range", start: date, end: date });
+        this.renderCalendar();
+    }
+
+    private ownsActivePointer(event: PointerEvent): boolean {
+        if (this.pointerMode === "idle") {
+            return true;
+        }
+        // Synthetic test events and a few older hosts omit pointerId. They are
+        // safe to pair only while the active gesture also has no pointer id;
+        // real concurrent pointers always carry distinct numeric ids.
+        return this.pointerId === null
+            ? typeof event.pointerId !== "number"
+            : event.pointerId === this.pointerId;
+    }
+
+    private scheduleTouchDrag(date: Date): void {
+        this.clearTouchTimer();
+        this.touchTimer = setTimeout(() => {
+            this.touchTimer = null;
+            if (this.pointerMode === "touch-pending" && this.dragAnchor &&
+                isSameDay(this.dragAnchor, date)) {
+                this.startDrag(date, {
+                    preventDefault: () => undefined
+                } as PointerEvent);
+            }
+        }, TOUCH_LONG_PRESS_MS);
+    }
+
+    private capturePointer(): void {
+        if (this.pointerId === null) {
+            return;
+        }
+        const rootWithPointerCapture = this.root as HTMLElement & {
+            setPointerCapture?: (pointerId: number) => void;
+        };
+        try {
+            rootWithPointerCapture.setPointerCapture?.(this.pointerId);
+        } catch {
+            // Pointer capture can fail when a host has already cancelled the pointer.
+        }
+    }
+
+    private releasePointer(): void {
+        if (this.pointerId === null) {
+            return;
+        }
+        const rootWithPointerCapture = this.root as HTMLElement & {
+            releasePointerCapture?: (pointerId: number) => void;
+        };
+        try {
+            rootWithPointerCapture.releasePointerCapture?.(this.pointerId);
+        } catch {
+            // The pointer may already have been released by the browser.
+        }
+    }
+
+    private clearTouchTimer(): void {
+        if (this.touchTimer !== null) {
+            clearTimeout(this.touchTimer);
+            this.touchTimer = null;
+        }
+    }
+
+    private clearTouchState(): void {
+        this.clearTouchTimer();
+        this.releasePointer();
+        this.isDragging = false;
+        this.pointerMode = "idle";
+        this.pointerId = null;
+        this.pointerType = "";
+        this.dragSelectionBefore = null;
+        this.dragActivePresetBefore = null;
+        this.dragAnchorBefore = null;
+        this.dragFocusedDateBefore = null;
+    }
+
+    private toggleDay(date: Date): boolean {
+        if (this.selection.type === "range" &&
+            this.rangeExceedsDiscreteLimit(this.selection.start, this.selection.end)) {
+            this.announce(this.localize(
+                "Selection_Limit",
+                "A discrete selection is limited to 5,000 dates; the contiguous range was kept"
+            ));
+            return false;
+        }
         const days: Date[] = this.selection.type === "days"
             ? [...this.selection.days]
             : this.selection.type === "range"
                 ? this.rangeDays(this.selection.start, this.selection.end)
                 : [];
         const idx = days.findIndex((d) => isSameDay(d, date));
+        if (idx < 0 && days.length >= MAX_DISCRETE_DAYS) {
+            this.announce(this.localize(
+                "Selection_Limit",
+                "A discrete selection is limited to 5,000 dates; the contiguous range was kept"
+            ));
+            return false;
+        }
         if (idx >= 0) {
             days.splice(idx, 1);
         } else {
             days.push(date);
         }
-        this.selection = days.length === 0 ? { type: "none" } : { type: "days", days };
+        this.setSelection(days.length === 0 ? { type: "none" } : { type: "days", days });
+        return true;
     }
 
     private rangeBetween(a: Date, b: Date): Selection {
@@ -741,9 +1045,20 @@ export class Visual implements IVisual {
     private rangeDays(start: Date, end: Date): Date[] {
         const days: Date[] = [];
         for (let d = start; d <= end; d = addDays(d, 1)) {
+            if (days.length >= MAX_DISCRETE_DAYS) {
+                break;
+            }
             days.push(d);
         }
         return days;
+    }
+
+    private rangeExceedsDiscreteLimit(start: Date, end: Date): boolean {
+        let count = 0;
+        for (let day = start; day <= end && count <= MAX_DISCRETE_DAYS; day = addDays(day, 1)) {
+            count++;
+        }
+        return count > MAX_DISCRETE_DAYS;
     }
 
     private moveVisibleTo(date: Date): void {
@@ -798,17 +1113,26 @@ export class Visual implements IVisual {
         if (!this.focusedDate || this.isDateDisabled(this.focusedDate)) {
             return;
         }
-        this.activePreset = null;
         const multiSelectEnabled = this.formattingSettings.interactionCard.multiSelect.value;
         if ((event.ctrlKey || event.metaKey) && multiSelectEnabled) {
-            this.toggleDay(this.focusedDate);
+            if (!this.toggleDay(this.focusedDate)) {
+                return;
+            }
+            this.activePreset = null;
         } else if (event.shiftKey && this.dragAnchor) {
-            this.selection = this.rangeBetween(this.dragAnchor, this.focusedDate);
+            this.activePreset = null;
+            this.setSelection(this.rangeBetween(this.dragAnchor, this.focusedDate));
         } else {
+            this.activePreset = null;
             this.dragAnchor = this.focusedDate;
-            this.selection = { type: "range", start: this.focusedDate, end: this.focusedDate };
+            this.setSelection({
+                type: "range",
+                start: this.focusedDate,
+                end: this.focusedDate
+            });
         }
         this.applySelection();
+        this.announce(this.selectionStatus());
         this.persistVisibleMonth();
         this.renderCalendar();
     }
@@ -834,7 +1158,6 @@ export class Visual implements IVisual {
                 event.preventDefault();
                 this.selectFocused(event);
                 return;
-            case "Escape":
             case "Delete":
             case "Backspace":
                 event.preventDefault();
@@ -880,6 +1203,17 @@ export class Visual implements IVisual {
         if (!this.visible) {
             return;
         }
+        this.root.appendChild(this.buildLiveRegion());
+        if (this.dataTruncated) {
+            const disclosure = document.createElement("div");
+            disclosure.className = "cs-disclosure";
+            disclosure.setAttribute("role", "status");
+            disclosure.textContent = this.localize(
+                "Data_Truncated",
+                "Only the first 30,000 dates are available; empty-day indicators are disabled because the data may be incomplete"
+            );
+            this.root.appendChild(disclosure);
+        }
         this.root.appendChild(this.buildToolbar());
         if (this.formattingSettings.presetsCard.show.value) {
             this.root.appendChild(this.buildPresets());
@@ -899,6 +1233,17 @@ export class Visual implements IVisual {
             this.root.appendChild(container);
         }
         this.restoreFocus(focus);
+    }
+
+    private buildLiveRegion(): HTMLElement {
+        const live = document.createElement("div");
+        live.id = "cs-live-status";
+        live.className = "cs-live";
+        live.setAttribute("role", "status");
+        live.setAttribute("aria-live", "polite");
+        live.textContent = this.pendingAnnouncement;
+        this.pendingAnnouncement = "";
+        return live;
     }
 
     private captureFocus(): FocusSnapshot | null {
@@ -1090,27 +1435,25 @@ export class Visual implements IVisual {
         const cells = this.formattingSettings.cellsCard;
         const calendar = this.formattingSettings.calendarCard;
         const td = document.createElement("td");
-
-        const day = document.createElement("div");
-        day.className = "cs-day";
-        day.textContent = String(cell.date.getDate());
-        day.setAttribute("role", "gridcell");
-        day.setAttribute("aria-label", this.dayLabel(cell.date));
-        day.dataset.key = this.dayKey(cell.date);
+        td.className = "cs-day";
+        td.textContent = String(cell.date.getDate());
+        td.setAttribute("role", "gridcell");
+        td.setAttribute("aria-label", this.dayLabel(cell.date));
+        td.dataset.key = this.dayKey(cell.date);
 
         const inMonth = cell.date.getMonth() === displayMonth;
         if (!inMonth) {
-            day.classList.add("other-month");
+            td.classList.add("other-month");
         }
         if (!this.isHighContrast) {
-            day.style.color = cells.textColor.value.value;
+            td.style.color = cells.textColor.value.value;
         }
 
         const isWeekend = cell.date.getDay() === 0 || cell.date.getDay() === 6;
         if (cells.weekendShading.value && isWeekend) {
-            day.classList.add("weekend");
+            td.classList.add("weekend");
             if (!this.isHighContrast) {
-                day.style.background = cells.weekendColor.value.value;
+                td.style.background = cells.weekendColor.value.value;
             }
         }
 
@@ -1120,7 +1463,7 @@ export class Visual implements IVisual {
 
         if (heatmap.show.value && this.hasValues && hasData && !this.isHighContrast) {
             const value = this.dataValues.get(dayKey) as number;
-            day.style.background = this.heatColor(
+            td.style.background = this.heatColor(
                 value,
                 heatmap.minColor.value.value,
                 heatmap.maxColor.value.value
@@ -1129,36 +1472,38 @@ export class Visual implements IVisual {
 
         const noData = this.isDateDisabled(cell.date);
         if (noData) {
-            day.classList.add("no-data");
-            day.setAttribute("aria-disabled", "true");
+            td.classList.add("no-data");
+            td.setAttribute("aria-disabled", "true");
         }
 
         if (calendar.showTodayMarker.value && isSameDay(cell.date, startOfDay(new Date()))) {
-            day.classList.add("today");
+            td.classList.add("today");
             if (!this.isHighContrast) {
-                day.style.boxShadow = `inset 0 0 0 1px ${cells.todayColor.value.value}`;
+                td.style.boxShadow = `inset 0 0 0 1px ${cells.todayColor.value.value}`;
             }
         }
 
         const selected = this.isSelected(cell.date);
-        day.setAttribute("aria-selected", selected ? "true" : "false");
+        td.setAttribute("aria-selected", selected ? "true" : "false");
         if (selected) {
-            day.classList.add("selected");
+            td.classList.add("selected");
             if (!this.isHighContrast) {
-                day.style.background = cells.selectedColor.value.value;
-                day.style.color = "#ffffff";
+                const selectedColor = cells.selectedColor.value.value;
+                td.style.background = selectedColor;
+                td.style.color = this.contrastText(selectedColor);
             }
         }
 
         const focused = this.focusedDate !== null && isSameDay(cell.date, this.focusedDate);
-        day.tabIndex = this.interactive && focused && inMonth ? 0 : -1;
+        td.tabIndex = this.interactive && focused && inMonth ? 0 : -1;
 
         if (this.interactive && !noData) {
-            day.addEventListener("pointerdown", (e) => this.onDayPointerDown(cell.date, e));
-            day.addEventListener("pointerenter", () => this.onDayPointerEnter(cell.date));
+            td.addEventListener("pointerdown", (e) => this.onDayPointerDown(cell.date, e));
+            td.addEventListener("pointerenter", (e) =>
+                this.onDayPointerEnter(cell.date, e)
+            );
         }
 
-        td.appendChild(day);
         return td;
     }
 
@@ -1181,9 +1526,18 @@ export class Visual implements IVisual {
     }
 
     private onContextMenu(event: MouseEvent): void {
+        if (!this.interactive) {
+            return;
+        }
+        const target = event.target instanceof Element
+            ? event.target.closest<HTMLElement>(".cs-day")
+            : null;
+        const selectionId = target?.dataset.key
+            ? this.dataPointIds.get(target.dataset.key)
+            : undefined;
         event.preventDefault();
         this.selectionManager.showContextMenu(
-            {},
+            selectionId || {} as powerbi.extensibility.ISelectionId,
             { x: event.clientX, y: event.clientY }
         );
     }
@@ -1195,9 +1549,60 @@ export class Visual implements IVisual {
             return date >= this.selection.start && date <= this.selection.end;
         }
         if (this.selection.type === "days") {
-            return this.selection.days.some((d) => isSameDay(d, date));
+            return this.selectedDayKeys.has(this.dayKey(date));
         }
         return false;
+    }
+
+    private setSelection(selection: Selection): void {
+        this.selection = selection;
+        this.selectedDayKeys.clear();
+        if (selection.type === "days") {
+            for (const day of selection.days) {
+                this.selectedDayKeys.add(this.dayKey(day));
+            }
+        }
+    }
+
+    private selectionStatus(): string {
+        if (this.selection.type === "none") {
+            return this.localize("Selection_None", "No dates selected");
+        }
+        if (this.selection.type === "range") {
+            if (!isSameDay(this.selection.start, this.selection.end)) {
+                return this.localize("Selection_Range", "Selected from {0} through {1}")
+                    .replace("{0}", this.dayLabel(this.selection.start))
+                    .replace("{1}", this.dayLabel(this.selection.end));
+            }
+            return this.localize("Selection_One", "Selected {0}")
+                .replace("{0}", this.dayLabel(this.selection.start));
+        }
+        return this.localize("Selection_Many", "Selected {0} dates")
+            .replace(
+                "{0}",
+                new Intl.NumberFormat(this.locale).format(this.selection.days.length)
+            );
+    }
+
+    private announce(message: string): void {
+        this.pendingAnnouncement = message;
+        const live = this.root.querySelector<HTMLElement>("#cs-live-status");
+        if (live) {
+            live.textContent = message;
+        }
+    }
+
+    private contrastText(background: string): string {
+        const { r, g, b } = this.hexToRgb(background);
+        const channel = (value: number): number => {
+            const normalized = value / 255;
+            return normalized <= 0.03928
+                ? normalized / 12.92
+                : Math.pow((normalized + 0.055) / 1.055, 2.4);
+        };
+        const luminance = 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+        const whiteContrast = (1.05) / (luminance + 0.05);
+        return whiteContrast >= 4.5 ? "#ffffff" : "#000000";
     }
 
     // ---- formatting-derived values --------------------------------------
