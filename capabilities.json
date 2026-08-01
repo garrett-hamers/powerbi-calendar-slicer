@@ -12,7 +12,7 @@
             "displayNameKey": "Role_Date",
             "name": "Date",
             "kind": "Grouping",
-            "description": "Date column to filter the report by",
+            "description": "One concrete Date/DateTime column to filter the report by",
             "descriptionKey": "Role_Date_Desc"
         },
         {
@@ -68,9 +68,9 @@
                 "weekStartDay": {
                     "type": {
                         "enumeration": [
-                            { "value": "0", "displayName": "Sunday" },
-                            { "value": "1", "displayName": "Monday" },
-                            { "value": "6", "displayName": "Saturday" }
+                            { "value": "0", "displayName": "Sunday", "displayNameKey": "Calendar_WeekStart_Sunday" },
+                            { "value": "1", "displayName": "Monday", "displayNameKey": "Calendar_WeekStart_Monday" },
+                            { "value": "6", "displayName": "Saturday", "displayNameKey": "Calendar_WeekStart_Saturday" }
                         ]
                     }
                 },
@@ -86,18 +86,18 @@
                 "fiscalYearStartMonth": {
                     "type": {
                         "enumeration": [
-                            { "value": "1", "displayName": "January" },
-                            { "value": "2", "displayName": "February" },
-                            { "value": "3", "displayName": "March" },
-                            { "value": "4", "displayName": "April" },
-                            { "value": "5", "displayName": "May" },
-                            { "value": "6", "displayName": "June" },
-                            { "value": "7", "displayName": "July" },
-                            { "value": "8", "displayName": "August" },
-                            { "value": "9", "displayName": "September" },
-                            { "value": "10", "displayName": "October" },
-                            { "value": "11", "displayName": "November" },
-                            { "value": "12", "displayName": "December" }
+                            { "value": "1", "displayName": "January", "displayNameKey": "Month_January" },
+                            { "value": "2", "displayName": "February", "displayNameKey": "Month_February" },
+                            { "value": "3", "displayName": "March", "displayNameKey": "Month_March" },
+                            { "value": "4", "displayName": "April", "displayNameKey": "Month_April" },
+                            { "value": "5", "displayName": "May", "displayNameKey": "Month_May" },
+                            { "value": "6", "displayName": "June", "displayNameKey": "Month_June" },
+                            { "value": "7", "displayName": "July", "displayNameKey": "Month_July" },
+                            { "value": "8", "displayName": "August", "displayNameKey": "Month_August" },
+                            { "value": "9", "displayName": "September", "displayNameKey": "Month_September" },
+                            { "value": "10", "displayName": "October", "displayNameKey": "Month_October" },
+                            { "value": "11", "displayName": "November", "displayNameKey": "Month_November" },
+                            { "value": "12", "displayName": "December", "displayNameKey": "Month_December" }
                         ]
                     }
                 }

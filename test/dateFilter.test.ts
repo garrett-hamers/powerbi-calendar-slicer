@@ -5,6 +5,7 @@ import {
     buildMultiDayFilter,
     buildRangeFilter,
     buildRelativeFilter,
+    MAX_DISCRETE_DAYS,
     targetFromQueryName,
     FilterTarget
 } from "../src/dateFilter";
@@ -20,8 +21,12 @@ describe("targetFromQueryName", () => {
         });
     });
 
-    it("uses the concrete display column for a hierarchy level", () => {
-        expect(targetFromQueryName("Calendar.Date Hierarchy.Date", "Date")).toEqual({
+    it("rejects hierarchy query names instead of deriving targets from captions", () => {
+        expect(targetFromQueryName("Calendar.Date Hierarchy.Date", "Renamed Date")).toBeNull();
+    });
+
+    it("ignores a localized or renamed display caption", () => {
+        expect(targetFromQueryName("Calendar.Date", "Datum")).toEqual({
             table: "Calendar",
             column: "Date"
         });
@@ -60,6 +65,13 @@ describe("range filter", () => {
 });
 
 describe("multi-day basic filter", () => {
+    it("rejects an oversized discrete payload", () => {
+        const days = Array.from({ length: MAX_DISCRETE_DAYS + 1 }, (_, index) =>
+            makeDate(2024, 0, index + 1)
+        );
+        expect(() => buildMultiDayFilter(days, target)).toThrow(RangeError);
+    });
+
     it("uses In with de-duplicated, sorted naive-local values", () => {
         const f = buildMultiDayFilter(
             [makeDate(2024, 2, 15), makeDate(2024, 2, 1), makeDate(2024, 2, 15)],

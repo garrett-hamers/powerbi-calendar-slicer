@@ -2,8 +2,8 @@
  * Mock DataView builder for Atlyn Calendar Slicer tests.
  *
  * Mirrors the shape the visual reads: a categorical DataView with a single
- * `Date` category column (a `dateTime` column, or a `numeric` date-hierarchy
- * level) and an optional `Values` measure (with optional highlights).
+ * `Date` category column and an optional `Values` measure (with optional
+ * highlights). The numeric option is retained only for rejection tests.
  */
 export interface MockDataInput {
     dates: Array<Date | number | string | null | undefined>;

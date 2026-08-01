@@ -30,16 +30,44 @@ describe("relative-date presets", () => {
         ]);
     });
 
-    it("Today is a single-day half-open range", () => {
+    it("Today uses a live relative day filter", () => {
         const now = makeDate(2024, 4, 15);
         const r = compute("today", ctx(now));
         expect(serializeDate(r.start)).toBe(serializeDate(makeDate(2024, 4, 15)));
         expect(serializeDate(r.endExclusive)).toBe(serializeDate(makeDate(2024, 4, 16)));
         const filter = r.filter as unknown as {
-            conditions: Array<{ operator: string }>;
+            operator: number;
+            timeUnitsCount: number;
+            timeUnitType: number;
+            includeToday: boolean;
         };
-        expect(filter.conditions[0].operator).toBe("GreaterThanOrEqual");
-        expect(filter.conditions[1].operator).toBe("LessThan");
+        expect(filter.operator).toBe(RelativeDateOperators.InThis);
+        expect(filter.timeUnitsCount).toBe(1);
+        expect(filter.timeUnitType).toBe(RelativeDateFilterTimeUnit.Days);
+        expect(filter.includeToday).toBe(true);
+    });
+
+    it("Yesterday uses a live relative day filter excluding today", () => {
+        const now = makeDate(2024, 4, 15);
+        const r = compute("yesterday", ctx(now));
+        const filter = r.filter as unknown as {
+            operator: number;
+            timeUnitsCount: number;
+            includeToday: boolean;
+        };
+        expect(filter.operator).toBe(RelativeDateOperators.InLast);
+        expect(filter.timeUnitsCount).toBe(1);
+        expect(filter.includeToday).toBe(false);
+    });
+
+    it("This Week is relative when the host week starts Sunday", () => {
+        const r = compute("thisWeek", ctx(makeDate(2024, 4, 15)));
+        const filter = r.filter as unknown as {
+            operator: number;
+            timeUnitType: number;
+        };
+        expect(filter.operator).toBe(RelativeDateOperators.InThis);
+        expect(filter.timeUnitType).toBe(RelativeDateFilterTimeUnit.CalendarWeeks);
     });
 
     it("Last 7 Days is a live InLast/Days relative filter with a 7-day window", () => {

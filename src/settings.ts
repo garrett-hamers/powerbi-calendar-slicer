@@ -16,11 +16,11 @@ class CalendarCard extends FormattingSettingsCard {
         displayName: "Week Starts On",
         displayNameKey: "Calendar_WeekStartDay",
         items: [
-            { value: "0", displayName: "Sunday" },
-            { value: "1", displayName: "Monday" },
-            { value: "6", displayName: "Saturday" }
+            { value: "0", displayNameKey: "Calendar_WeekStart_Sunday" },
+            { value: "1", displayNameKey: "Calendar_WeekStart_Monday" },
+            { value: "6", displayNameKey: "Calendar_WeekStart_Saturday" }
         ],
-        value: { value: "0", displayName: "Sunday" }
+        value: { value: "0", displayNameKey: "Calendar_WeekStart_Sunday" }
     });
 
     monthsToShow = new formattingSettings.NumUpDown({
@@ -59,20 +59,20 @@ class CalendarCard extends FormattingSettingsCard {
         description: "First month of the fiscal year; drives the QTD and YTD presets",
         descriptionKey: "Calendar_FiscalYearStartMonth_Desc",
         items: [
-            { value: "1", displayName: "January" },
-            { value: "2", displayName: "February" },
-            { value: "3", displayName: "March" },
-            { value: "4", displayName: "April" },
-            { value: "5", displayName: "May" },
-            { value: "6", displayName: "June" },
-            { value: "7", displayName: "July" },
-            { value: "8", displayName: "August" },
-            { value: "9", displayName: "September" },
-            { value: "10", displayName: "October" },
-            { value: "11", displayName: "November" },
-            { value: "12", displayName: "December" }
+            { value: "1", displayNameKey: "Month_January" },
+            { value: "2", displayNameKey: "Month_February" },
+            { value: "3", displayNameKey: "Month_March" },
+            { value: "4", displayNameKey: "Month_April" },
+            { value: "5", displayNameKey: "Month_May" },
+            { value: "6", displayNameKey: "Month_June" },
+            { value: "7", displayNameKey: "Month_July" },
+            { value: "8", displayNameKey: "Month_August" },
+            { value: "9", displayNameKey: "Month_September" },
+            { value: "10", displayNameKey: "Month_October" },
+            { value: "11", displayNameKey: "Month_November" },
+            { value: "12", displayNameKey: "Month_December" }
         ],
-        value: { value: "1", displayName: "January" }
+        value: { value: "1", displayNameKey: "Month_January" }
     });
 
     name = "calendar";

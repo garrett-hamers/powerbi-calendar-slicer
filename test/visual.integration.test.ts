@@ -23,6 +23,18 @@ interface AppliedFilter {
 function createHost() {
     const applied: AppliedFilter[] = [];
     const persisted: unknown[] = [];
+    const contextMenus: unknown[][] = [];
+    const createSelectionIdBuilder = () => {
+        let index = -1;
+        const builder = {
+            withCategory: (_category: unknown, categoryIndex: number) => {
+                index = categoryIndex;
+                return builder;
+            },
+            createSelectionId: () => ({ key: `date:${index}` })
+        };
+        return builder;
+    };
     const host = {
         locale: "en-US",
         colorPalette: {
@@ -36,9 +48,12 @@ function createHost() {
             renderingFailed: vi.fn()
         },
         createSelectionManager: () => ({
-            showContextMenu: vi.fn(),
+            showContextMenu: vi.fn((selectionId: unknown, position: unknown) => {
+                contextMenus.push([selectionId, position]);
+            }),
             registerOnSelectCallback: vi.fn()
         }),
+        createSelectionIdBuilder,
         createLocalizationManager: () => ({
             getDisplayName: (key: string) => key
         }),
@@ -54,15 +69,15 @@ function createHost() {
             persisted.push(instances);
         }
     };
-    return { host, applied, persisted };
+    return { host, applied, persisted, contextMenus };
 }
 
 function createVisual() {
     const element = document.createElement("div");
     document.body.appendChild(element);
-    const { host, applied, persisted } = createHost();
+    const { host, applied, persisted, contextMenus } = createHost();
     const visual = new Visual({ element, host } as unknown as VisualConstructorOptions);
-    return { visual, element, applied, persisted, host };
+    return { visual, element, applied, persisted, host, contextMenus };
 }
 
 function updateOptions(dataView: unknown, jsonFilters: unknown[] = []) {
@@ -83,6 +98,17 @@ describe("Atlyn Calendar Slicer visual", () => {
         const { visual, element } = createVisual();
         visual.update(updateOptions(buildEmptyDataView()));
         expect(element.querySelector(".cs-landing")).not.toBeNull();
+        expect(element.querySelector(".cs-grid")).toBeNull();
+    });
+
+    it("rejects automatic numeric hierarchy levels", () => {
+        const { visual, element } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [2024, 2025],
+            dateType: "numeric",
+            dateQueryName: "Calendar.Date Hierarchy.Year"
+        })));
+        expect(element.querySelector(".cs-landing")?.textContent).toContain("hierarchies");
         expect(element.querySelector(".cs-grid")).toBeNull();
     });
 
@@ -263,6 +289,22 @@ describe("Atlyn Calendar Slicer visual", () => {
         expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(1);
     });
 
+    it("preserves the bound model through resize updates without dataViews", () => {
+        const { visual, element } = createVisual();
+        const dataView = buildMockDataView({
+            dates: [new Date(2024, 2, 1), new Date(2024, 2, 31)]
+        });
+        visual.update(updateOptions(dataView));
+        const before = element.querySelector(".cs-grid");
+        visual.update({
+            type: 4,
+            viewport: { width: 640, height: 480 }
+        } as unknown as VisualUpdateOptions);
+        expect(before).not.toBeNull();
+        expect(element.querySelector(".cs-grid")).not.toBeNull();
+        expect(element.querySelector(".cs-landing")).toBeNull();
+    });
+
     it("ignores inbound filters for a different target", () => {
         const { visual, element } = createVisual();
         const dataView = buildMockDataView({
@@ -433,6 +475,51 @@ describe("Atlyn Calendar Slicer visual", () => {
         ]);
     });
 
+    it("keeps vertical touch movement available for scrolling", () => {
+        const { visual, element, applied } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 10), new Date(2024, 2, 15)]
+        })));
+
+        const cell = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-10']")!;
+        const down = new Event("pointerdown", { bubbles: true });
+        Object.assign(down, { pointerType: "touch", clientX: 10, clientY: 10, pointerId: 1 });
+        cell.dispatchEvent(down);
+        const move = new Event("pointermove", { bubbles: true });
+        Object.assign(move, { pointerType: "touch", clientX: 10, clientY: 40, pointerId: 1 });
+        element.querySelector<HTMLElement>(".atlynCalendarSlicer")!.dispatchEvent(move);
+        const up = new Event("pointerup", { bubbles: true });
+        Object.assign(up, { pointerType: "touch", pointerId: 1 });
+        element.querySelector<HTMLElement>(".atlynCalendarSlicer")!.dispatchEvent(up);
+
+        expect(applied.filter((entry) => entry.action === 0)).toHaveLength(0);
+    });
+
+    it("uses data-point and empty-space SelectionIds without filtering on context menus", () => {
+        const { visual, element, applied, contextMenus } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 15)]
+        })));
+
+        const cell = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-15']")!;
+        const rightDown = new Event("pointerdown", { bubbles: true });
+        Object.assign(rightDown, { button: 2, pointerType: "mouse" });
+        cell.dispatchEvent(rightDown);
+        expect(applied).toHaveLength(0);
+
+        cell.dispatchEvent(new MouseEvent("contextmenu", {
+            bubbles: true,
+            clientX: 10,
+            clientY: 20
+        }));
+        expect(contextMenus[0]?.[0]).toEqual({ key: "date:0" });
+
+        const grid = element.querySelector<HTMLElement>(".cs-grid")!;
+        grid.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+        expect(contextMenus[1]?.[0]).toEqual({});
+        expect(applied).toHaveLength(0);
+    });
+
     it("greys days without data when 'dates with data only' is enabled", () => {
         const { visual, element } = createVisual();
         visual.update(updateOptions(buildMockDataView({
@@ -467,6 +554,7 @@ describe("Atlyn Calendar Slicer visual", () => {
         expect(day10).not.toBeNull();
         expect(day10!.classList.contains("no-data")).toBe(false);
         expect(day10!.getAttribute("aria-disabled")).toBeNull();
+        expect(element.querySelector(".cs-disclosure")?.textContent).toContain("30,000");
     });
 
     it("greys empty days when the category is comfortably below the cap", () => {
@@ -548,6 +636,15 @@ describe("Atlyn Calendar Slicer visual", () => {
         const root = element.querySelector<HTMLElement>(".atlynCalendarSlicer")!;
         expect(root.classList.contains("read-only")).toBe(false);
         expect(element.querySelectorAll(".cs-day[tabindex='0']").length).toBe(1);
+    });
+
+    it("cleans DOM and pointer listeners on destroy", () => {
+        const { visual, element } = createVisual();
+        visual.update(updateOptions(buildMockDataView({ dates: [new Date(2024, 2, 15)] })));
+        visual.destroy();
+        expect(element.querySelector(".atlynCalendarSlicer")?.childElementCount).toBe(0);
+        visual.update(updateOptions(buildMockDataView({ dates: [new Date(2024, 2, 15)] })));
+        expect(element.querySelector(".cs-grid")).toBeNull();
     });
 
     it("renders multiple month grids when monthsToShow > 1", () => {

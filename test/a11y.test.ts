@@ -99,7 +99,7 @@ describe("Atlyn Calendar Slicer accessibility", () => {
         expect(element.querySelectorAll(".cs-day[tabindex='0']").length).toBe(1);
     });
 
-    it("selects the focused day with Enter and clears with Escape", () => {
+    it("selects with Enter while Escape remains available to the host", () => {
         const { visual, element, applied } = mount();
         update(visual, marchData());
 
@@ -113,7 +113,7 @@ describe("Atlyn Calendar Slicer accessibility", () => {
 
         pressKey(element, "Escape");
         const removes = applied.filter((a) => a.action === 1);
-        expect(removes.length).toBeGreaterThanOrEqual(1);
+        expect(removes).toHaveLength(0);
         expect(document.activeElement).toBe(
             element.querySelector(".cs-day[tabindex='0']")
         );
