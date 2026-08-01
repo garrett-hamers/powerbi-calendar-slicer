@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import powerbi from "powerbi-visuals-api";
 import { Visual } from "../src/visual";
 import { buildEmptyDataView, buildMockDataView } from "./helpers/mockDataView";
-import { addDays, serializeDateNaive } from "../src/utils/dateMath";
+import { addDays, serializeDate, serializeDateNaive } from "../src/utils/dateMath";
 
 import VisualConstructorOptions = powerbi.extensibility.visual.VisualConstructorOptions;
 import VisualUpdateOptions = powerbi.extensibility.visual.VisualUpdateOptions;
@@ -121,6 +121,15 @@ describe("Atlyn Calendar Slicer visual", () => {
         })));
         expect(element.querySelector(".cs-landing")?.textContent).toContain("hierarchies");
         expect(element.querySelector(".cs-grid")).toBeNull();
+    });
+
+    it("accepts concrete DateTime identifiers containing hierarchy text", () => {
+        const { visual, element } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 1)],
+            dateQueryName: "HierarchyCalendar.Date"
+        })));
+        expect(element.querySelector(".cs-grid")).not.toBeNull();
     });
 
     it("renders a 7-column month grid for a bound date column", () => {
@@ -521,6 +530,9 @@ describe("Atlyn Calendar Slicer visual", () => {
         const secondDown = new Event("pointerdown", { bubbles: true });
         Object.assign(secondDown, { pointerType: "mouse", pointerId: 2, button: 0 });
         competing.dispatchEvent(secondDown);
+        const secondEnter = new Event("pointerenter", { bubbles: true });
+        Object.assign(secondEnter, { pointerType: "mouse", pointerId: 2 });
+        competing.dispatchEvent(secondEnter);
         const secondMove = new Event("pointermove", { bubbles: true });
         Object.assign(secondMove, { pointerType: "mouse", pointerId: 2 });
         competing.dispatchEvent(secondMove);
@@ -591,6 +603,33 @@ describe("Atlyn Calendar Slicer visual", () => {
         second.dispatchEvent(overLimit);
         expect(applied.filter((entry) => entry.action === 0)).toHaveLength(1);
         expect(second.classList.contains("selected")).toBe(false);
+        expect(element.querySelector("#cs-live-status")?.textContent)
+            .toContain("5,000");
+    });
+
+    it("rejects toggling inside an oversized contiguous range", () => {
+        const { visual, element, applied } = createVisual();
+        const start = new Date(2020, 0, 1);
+        visual.update(updateOptions(buildMockDataView({
+            dates: [start],
+            objects: { general: { visibleYear: 2020, visibleMonth: 0 } }
+        }), [{
+            target: { table: "Calendar", column: "Date" },
+            logicalOperator: "And",
+            conditions: [
+                { operator: "GreaterThanOrEqual", value: serializeDate(start) },
+                { operator: "LessThan", value: serializeDate(addDays(start, 5001)) }
+            ]
+        }]));
+
+        const inside = element.querySelector<HTMLElement>(".cs-day[data-key='2020-0-2']")!;
+        expect(inside.classList.contains("selected")).toBe(true);
+        const toggle = new Event("pointerdown", { bubbles: true });
+        Object.assign(toggle, { ctrlKey: true, button: 0 });
+        inside.dispatchEvent(toggle);
+
+        expect(applied.filter((entry) => entry.action === 0)).toHaveLength(0);
+        expect(inside.classList.contains("selected")).toBe(true);
         expect(element.querySelector("#cs-live-status")?.textContent)
             .toContain("5,000");
     });

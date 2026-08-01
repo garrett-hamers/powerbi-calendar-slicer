@@ -354,8 +354,7 @@ export class Visual implements IVisual {
         // Date hierarchy levels and automatic numeric levels do not identify the
         // concrete source column required by a column filter. Only Date/DateTime
         // metadata is supported.
-        return type?.dateTime === true &&
-            !/Hierarchy/i.test(category.source.queryName || "");
+        return type?.dateTime === true;
     }
 
     private parseData(dataView: DataView | undefined, category: DataViewCategoryColumn): void {
@@ -812,8 +811,9 @@ export class Visual implements IVisual {
         this.startDrag(date, event);
     }
 
-    private onDayPointerEnter(date: Date): void {
-        if (!this.isDragging || !this.dragAnchor) {
+    private onDayPointerEnter(date: Date, event: PointerEvent): void {
+        if (!this.isDragging || !this.dragAnchor ||
+            !this.ownsActivePointer(event)) {
             return;
         }
         if (this.focusedDate && isSameDay(this.focusedDate, date)) {
@@ -856,7 +856,7 @@ export class Visual implements IVisual {
         const date = hit?.dataset.key ? this.dateFromDayKey(hit.dataset.key) : null;
         if (date && !this.isDateDisabled(date)) {
             event.preventDefault();
-            this.onDayPointerEnter(date);
+            this.onDayPointerEnter(date, event);
         }
     }
 
@@ -1006,17 +1006,21 @@ export class Visual implements IVisual {
     }
 
     private toggleDay(date: Date): boolean {
+        if (this.selection.type === "range" &&
+            this.rangeExceedsDiscreteLimit(this.selection.start, this.selection.end)) {
+            this.announce(this.localize(
+                "Selection_Limit",
+                "A discrete selection is limited to 5,000 dates; the contiguous range was kept"
+            ));
+            return false;
+        }
         const days: Date[] = this.selection.type === "days"
             ? [...this.selection.days]
             : this.selection.type === "range"
                 ? this.rangeDays(this.selection.start, this.selection.end)
                 : [];
         const idx = days.findIndex((d) => isSameDay(d, date));
-        if (idx < 0 && (
-            (this.selection.type === "range" &&
-                this.rangeExceedsDiscreteLimit(this.selection.start, this.selection.end)) ||
-            days.length >= MAX_DISCRETE_DAYS
-        )) {
+        if (idx < 0 && days.length >= MAX_DISCRETE_DAYS) {
             this.announce(this.localize(
                 "Selection_Limit",
                 "A discrete selection is limited to 5,000 dates; the contiguous range was kept"
@@ -1495,7 +1499,9 @@ export class Visual implements IVisual {
 
         if (this.interactive && !noData) {
             td.addEventListener("pointerdown", (e) => this.onDayPointerDown(cell.date, e));
-            td.addEventListener("pointerenter", () => this.onDayPointerEnter(cell.date));
+            td.addEventListener("pointerenter", (e) =>
+                this.onDayPointerEnter(cell.date, e)
+            );
         }
 
         return td;

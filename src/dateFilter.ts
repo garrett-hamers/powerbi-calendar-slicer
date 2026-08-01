@@ -64,8 +64,7 @@ export function targetFromQueryName(
     // (`Table.Column`). Extra separators represent a hierarchy/path level, even
     // when Power BI does not spell the word "Hierarchy" in the query name.
     if (dot <= 0 || dot === queryName.length - 1 ||
-        column.includes(".") ||
-        /hierarchy/i.test(column)) {
+        column.includes(".")) {
         return null;
     }
     if (!column) {

@@ -14,7 +14,7 @@ import { makeDate } from "../src/utils/dateMath";
 const target: FilterTarget = { table: "Calendar", column: "Date" };
 
 describe("targetFromQueryName", () => {
-    it("splits on the first dot into table + column", () => {
+    it("splits a concrete table + column path", () => {
         expect(targetFromQueryName("Calendar.Date")).toEqual({
             table: "Calendar",
             column: "Date"
@@ -37,6 +37,17 @@ describe("targetFromQueryName", () => {
         expect(targetFromQueryName("Calendar.Date", "Datum")).toEqual({
             table: "Calendar",
             column: "Date"
+        });
+    });
+
+    it("accepts legitimate identifiers containing the word hierarchy", () => {
+        expect(targetFromQueryName("HierarchyCalendar.Date")).toEqual({
+            table: "HierarchyCalendar",
+            column: "Date"
+        });
+        expect(targetFromQueryName("Calendar.DateHierarchy")).toEqual({
+            table: "Calendar",
+            column: "DateHierarchy"
         });
     });
 
