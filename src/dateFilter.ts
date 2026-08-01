@@ -60,7 +60,7 @@ export function targetFromQueryName(
     }
     const dot = queryName.indexOf(".");
     if (dot <= 0 || dot === queryName.length - 1 ||
-        queryName.slice(dot + 1).includes("Hierarchy")) {
+        /hierarchy/i.test(queryName.slice(dot + 1))) {
         return null;
     }
     const column = queryName.slice(dot + 1);
