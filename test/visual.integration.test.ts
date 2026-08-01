@@ -212,6 +212,102 @@ describe("Atlyn Calendar Slicer visual", () => {
         expect(selected.length).toBe(6);
     });
 
+    it("reconciles bookmark A to B to clear in the same visual instance", () => {
+        const { visual, element } = createVisual();
+        const dataView = buildMockDataView({
+            dates: [new Date(2024, 2, 1), new Date(2024, 2, 31)]
+        });
+        const bookmarkA = {
+            target: { table: "Calendar", column: "Date" },
+            logicalOperator: "And",
+            conditions: [
+                { operator: "GreaterThanOrEqual", value: "2024-03-10T00:00:00.000Z" },
+                { operator: "LessThan", value: "2024-03-16T00:00:00.000Z" }
+            ]
+        };
+        const bookmarkB = {
+            target: { table: "Calendar", column: "Date" },
+            operator: "In",
+            values: ["2024-03-20T00:00:00", "2024-03-22T00:00:00"]
+        };
+
+        visual.update(updateOptions(dataView, [bookmarkA]));
+        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(6);
+
+        visual.update(updateOptions(dataView, [bookmarkB]));
+        expect(Array.from(element.querySelectorAll<HTMLElement>(".cs-day.selected"))
+            .map((day) => day.dataset.key)
+            .sort()).toEqual(["2024-2-20", "2024-2-22"]);
+
+        visual.update(updateOptions(dataView, []));
+        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(0);
+    });
+
+    it("preserves selection when an update omits jsonFilters", () => {
+        const { visual, element } = createVisual();
+        const dataView = buildMockDataView({
+            dates: [new Date(2024, 2, 1), new Date(2024, 2, 31)]
+        });
+        const filter = {
+            target: { table: "Calendar", column: "Date" },
+            operator: "In",
+            values: ["2024-03-10T00:00:00"]
+        };
+        visual.update(updateOptions(dataView, [filter]));
+        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(1);
+
+        const withoutFilters = updateOptions(dataView);
+        withoutFilters.jsonFilters = undefined;
+        visual.update(withoutFilters);
+
+        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(1);
+    });
+
+    it("ignores inbound filters for a different target", () => {
+        const { visual, element } = createVisual();
+        const dataView = buildMockDataView({
+            dates: [new Date(2024, 2, 1), new Date(2024, 2, 31)]
+        });
+        const matching = {
+            target: { table: "Calendar", column: "Date" },
+            operator: "In",
+            values: ["2024-03-10T00:00:00"]
+        };
+        const unrelated = {
+            target: { table: "Sales", column: "OrderDate" },
+            operator: "In",
+            values: ["2024-03-20T00:00:00"]
+        };
+
+        visual.update(updateOptions(dataView, [matching]));
+        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(1);
+        visual.update(updateOptions(dataView, [unrelated]));
+        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(0);
+    });
+
+    it("restores a RelativeDateFilter using persisted preset state", () => {
+        const { visual, element } = createVisual();
+        const dataView = buildMockDataView({
+            dates: [new Date(2024, 2, 1), new Date(2024, 2, 31)],
+            objects: { general: { activePreset: "last7" } }
+        });
+        const relative = {
+            target: { table: "Calendar", column: "Date" },
+            operator: 0,
+            timeUnitsCount: 7,
+            timeUnitType: 0,
+            includeToday: true
+        };
+
+        visual.update(updateOptions(dataView, [relative]));
+
+        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(7);
+        const active = Array.from(
+            element.querySelectorAll<HTMLButtonElement>(".cs-presets .cs-btn")
+        ).find((button) => button.textContent === "Last 7 Days");
+        expect(active?.getAttribute("aria-pressed")).toBe("true");
+    });
+
     it("navigates to the next month when the next button is clicked", () => {
         const { visual, element } = createVisual();
         visual.update(updateOptions(buildMockDataView({ dates: [new Date(2024, 2, 15)] })));
@@ -264,6 +360,77 @@ describe("Atlyn Calendar Slicer visual", () => {
         expect(low!.style.background).toContain("rgb");
         expect(high!.style.background).toContain("rgb");
         expect(low!.style.background).not.toBe(high!.style.background);
+    });
+
+    it("distinguishes a null measure from a real zero", () => {
+        const { visual, element } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 1), new Date(2024, 2, 15)],
+            values: [null, 0],
+            objects: {
+                heatmap: { show: true, datesWithDataOnly: true }
+            }
+        })));
+
+        const blank = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-1']");
+        const zero = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-15']");
+        expect(blank?.classList.contains("no-data")).toBe(true);
+        expect(zero?.classList.contains("no-data")).toBe(false);
+        expect(zero?.style.background).toContain("rgb");
+    });
+
+    it("extends a touch-compatible pointer range before applying it", () => {
+        const { visual, element, applied } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 1), new Date(2024, 2, 31)]
+        })));
+
+        const start = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-10']")!;
+        const down = new Event("pointerdown", { bubbles: true });
+        (down as unknown as { pointerType: string }).pointerType = "touch";
+        start.dispatchEvent(down);
+
+        const end = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-15']")!;
+        const move = new Event("pointermove", { bubbles: true });
+        (move as unknown as { pointerType: string }).pointerType = "touch";
+        end.dispatchEvent(move);
+        element.querySelector<HTMLElement>(".atlynCalendarSlicer")!
+            .dispatchEvent(new Event("pointerup", { bubbles: true }));
+
+        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(6);
+        const merges = applied.filter((entry) => entry.action === 0 && entry.filter);
+        const filter = merges.at(-1)?.filter as {
+            conditions: Array<{ value: string }>;
+        };
+        expect(filter.conditions.map((condition) => condition.value)).toEqual([
+            "2024-03-10T00:00:00.000Z",
+            "2024-03-16T00:00:00.000Z"
+        ]);
+    });
+
+    it("does not extend a touch range onto an aria-disabled day", () => {
+        const { visual, element, applied } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 10)],
+            values: [1],
+            objects: { heatmap: { datesWithDataOnly: true } }
+        })));
+
+        element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-10']")!
+            .dispatchEvent(new Event("pointerdown", { bubbles: true }));
+        element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-12']")!
+            .dispatchEvent(new Event("pointermove", { bubbles: true }));
+        element.querySelector<HTMLElement>(".atlynCalendarSlicer")!
+            .dispatchEvent(new Event("pointerup", { bubbles: true }));
+
+        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(1);
+        const filter = applied.filter((entry) => entry.action === 0).at(-1)?.filter as {
+            conditions: Array<{ value: string }>;
+        };
+        expect(filter.conditions.map((condition) => condition.value)).toEqual([
+            "2024-03-10T00:00:00.000Z",
+            "2024-03-11T00:00:00.000Z"
+        ]);
     });
 
     it("greys days without data when 'dates with data only' is enabled", () => {

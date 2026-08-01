@@ -38,17 +38,18 @@ describe("submission metadata", () => {
         expect(pbiviz.visual.guid).toBe("calendarSlicerATLYN606CC6AF684C4BBA");
         expect(pbiviz.visual.name).toBe("atlynCalendarSlicer");
         expect(pbiviz.visual.displayName).toBe("Atlyn Calendar Slicer");
-        expect(pbiviz.visual.version).toBe("1.0.0.1");
-        expect(pbiviz.version).toBe("1.0.0.1");
+        expect(pbiviz.visual.version).toBe("1.0.0.2");
+        expect(pbiviz.version).toBe("1.0.0.2");
         expect(pbiviz.apiVersion).toBe("5.11.0");
-        expect(pbiviz.visual.supportUrl).toBe("https://www.atlynco.com/docs/faq");
+        expect(pbiviz.visual.supportUrl)
+            .toBe("https://github.com/garrett-hamers/powerbi-calendar-slicer/issues");
         expect(pbiviz.author.name).toBe("Atlyn");
         expect(pbiviz.author.email).toBe("atlyn.help@gmail.com");
         // externalJS must be empty for certification.
         expect(pbiviz.externalJS).toBeNull();
 
         expect(packageJson.name).toBe("calendar-slicer-visual");
-        expect(packageJson.version).toBe("1.0.0.1");
+        expect(packageJson.version).toBe("1.0.0.2");
         expect(packageJson.private).toBe(true);
     });
 
@@ -74,7 +75,7 @@ describe("submission metadata", () => {
             privileges: unknown[];
         }>("capabilities.json");
 
-        expect(capabilities.supportsHighlight).toBe(true);
+        expect(capabilities.supportsHighlight).toBe(false);
         expect(capabilities.supportsKeyboardFocus).toBe(true);
         expect(capabilities.supportsSynchronizingFilterState).toBe(true);
         expect(capabilities.supportsLandingPage).toBe(true);
@@ -164,7 +165,7 @@ describe("submission metadata", () => {
         }
         expect(gitignore).toContain("dist/");
         expect(gitignore).toContain(".tmp/");
-        expect(readme).toContain("calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.1.pbiviz");
+        expect(readme).toContain("calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.2.pbiviz");
         expect(readme).toContain("Power_BI-API_5.11");
         expect(readme).toContain("npm run certify");
         expect(license).toContain("MIT License");

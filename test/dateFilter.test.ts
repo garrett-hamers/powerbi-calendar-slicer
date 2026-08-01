@@ -20,10 +20,10 @@ describe("targetFromQueryName", () => {
         });
     });
 
-    it("keeps hierarchy levels in the column remainder", () => {
-        expect(targetFromQueryName("Calendar.Date Hierarchy.Date")).toEqual({
+    it("uses the concrete display column for a hierarchy level", () => {
+        expect(targetFromQueryName("Calendar.Date Hierarchy.Date", "Date")).toEqual({
             table: "Calendar",
-            column: "Date Hierarchy.Date"
+            column: "Date"
         });
     });
 

@@ -65,6 +65,16 @@ interface VisibleMonth {
     month: number;
 }
 
+interface RestoredSelection {
+    selection: Selection;
+    preset: string | null;
+}
+
+interface FocusSnapshot {
+    kind: "day" | "button";
+    controlId?: string;
+}
+
 export class Visual implements IVisual {
     private readonly target: HTMLElement;
     private readonly root: HTMLElement;
@@ -109,7 +119,7 @@ export class Visual implements IVisual {
     private visible: VisibleMonth | null = null;
     private focusedDate: Date | null = null;
 
-    /** Drag state for mouse range selection. */
+    /** Drag state shared by mouse, pen, and touch pointers. */
     private dragAnchor: Date | null = null;
     private isDragging = false;
 
@@ -127,8 +137,9 @@ export class Visual implements IVisual {
         this.root.className = "atlynCalendarSlicer";
         this.target.appendChild(this.root);
 
-        // End any drag even if the pointer is released outside a day cell.
+        this.root.addEventListener("pointermove", (event) => this.onRootPointerMove(event));
         this.root.addEventListener("pointerup", () => this.endDrag());
+        this.root.addEventListener("pointercancel", () => this.endDrag());
         this.root.addEventListener("pointerleave", () => this.endDrag());
     }
 
@@ -190,13 +201,46 @@ export class Visual implements IVisual {
                 return;
             }
 
-            this.filterTarget = targetFromQueryName(category.source.queryName || "");
+            this.filterTarget = targetFromQueryName(
+                category.source.queryName || "",
+                category.source.displayName
+            );
+            if (!this.filterTarget) {
+                this.renderLanding(this.localize(
+                    "Landing_BadType",
+                    "The Date field must be a date column or a date hierarchy level"
+                ));
+                this.host.eventService?.renderingFinished(options);
+                return;
+            }
             this.parseData(dataView, category);
-            this.restoreVisibleMonth(dataView);
-            this.restoreActivePreset(dataView);
-            this.restoreSelectionFromFilters(options.jsonFilters);
+            if (!this.dataMin || !this.dataMax) {
+                this.selection = { type: "none" };
+                this.activePreset = null;
+                this.renderLanding(this.localize(
+                    "Landing_NoDates",
+                    "No dates are available to display"
+                ));
+                this.host.eventService?.renderingFinished(options);
+                return;
+            }
 
-            if (!this.focusedDate) {
+            const hasPersistedView = this.restoreVisibleMonth(dataView);
+            if (options.jsonFilters !== undefined) {
+                this.reconcileSelectionFromFilters(dataView, options.jsonFilters);
+            }
+            if (!hasPersistedView) {
+                const selectedStart = this.selection.type === "range"
+                    ? this.selection.start
+                    : this.selection.type === "days"
+                        ? this.selection.days[0]
+                        : null;
+                if (selectedStart) {
+                    this.ensureVisible(selectedStart);
+                }
+            }
+
+            if (!this.focusedDate || !this.isWithinVisibleRange(this.focusedDate)) {
                 this.focusedDate = this.defaultFocusDate();
             }
 
@@ -223,7 +267,11 @@ export class Visual implements IVisual {
             return true;
         }
         if (type?.numeric || type?.integer) {
-            return true;
+            const values = category.values?.filter(
+                (value): value is number => typeof value === "number"
+            ) ?? [];
+            return values.length > 0 &&
+                values.every((value) => Number.isInteger(value) && value >= 1000 && value <= 9999);
         }
         // Fall back to inspecting the first non-null value.
         const first = category.values?.find((v) => v !== null && v !== undefined);
@@ -255,9 +303,8 @@ export class Visual implements IVisual {
                 max = date;
             }
             if (this.hasValues && measures) {
-                const raw = measures[i];
-                const num = typeof raw === "number" ? raw : Number(raw);
-                if (!isNaN(num)) {
+                const num = measures[i];
+                if (typeof num === "number" && Number.isFinite(num)) {
                     const key = this.dayKey(date);
                     this.dataValues.set(key, (this.dataValues.get(key) || 0) + num);
                 }
@@ -291,11 +338,10 @@ export class Visual implements IVisual {
         }
         if (typeof raw === "number") {
             // A bare year from a date hierarchy's Year level.
-            if (raw >= 1000 && raw <= 9999) {
+            if (Number.isInteger(raw) && raw >= 1000 && raw <= 9999) {
                 return makeDate(raw, 0, 1);
             }
-            const fromEpoch = new Date(raw);
-            return isNaN(fromEpoch.getTime()) ? null : startOfDay(fromEpoch);
+            return null;
         }
         if (typeof raw === "string") {
             const parsed = parseDateWithoutTimezone(raw);
@@ -306,10 +352,7 @@ export class Visual implements IVisual {
 
     // ---- persisted view state + bookmark restore ------------------------
 
-    private restoreVisibleMonth(dataView: DataView | undefined): void {
-        if (this.visible) {
-            return; // keep the month the user navigated to within this instance
-        }
+    private restoreVisibleMonth(dataView: DataView | undefined): boolean {
         const general = dataView?.metadata?.objects?.general as
             | { visibleYear?: number; visibleMonth?: number }
             | undefined;
@@ -319,22 +362,13 @@ export class Visual implements IVisual {
             typeof general.visibleMonth === "number"
         ) {
             this.visible = { year: general.visibleYear, month: general.visibleMonth };
-            return;
+            return true;
         }
-        const anchor = this.dataMax || new Date();
-        this.visible = { year: anchor.getFullYear(), month: anchor.getMonth() };
-    }
-
-    private restoreActivePreset(dataView: DataView | undefined): void {
-        if (this.activePreset !== null) {
-            return;
+        if (!this.visible) {
+            const anchor = this.dataMax || new Date();
+            this.visible = { year: anchor.getFullYear(), month: anchor.getMonth() };
         }
-        const general = dataView?.metadata?.objects?.general as
-            | { activePreset?: string }
-            | undefined;
-        if (general && typeof general.activePreset === "string" && general.activePreset) {
-            this.activePreset = general.activePreset;
-        }
+        return false;
     }
 
     /**
@@ -350,40 +384,130 @@ export class Visual implements IVisual {
      * add `registerOnSelectCallback` just to silence the warning; that would
      * wire up an unused selection path we don't use.
      */
-    private restoreSelectionFromFilters(jsonFilters: powerbi.IFilter[] | undefined): void {
-        if (!jsonFilters || jsonFilters.length === 0) {
-            return;
-        }
-        for (const filter of jsonFilters) {
-            const restored = this.selectionFromFilter(filter);
-            if (restored) {
-                this.selection = restored;
-                return;
-            }
-        }
+    private reconcileSelectionFromFilters(
+        dataView: DataView | undefined,
+        jsonFilters: powerbi.IFilter[] | undefined
+    ): void {
+        const general = dataView?.metadata?.objects?.general as
+            | { activePreset?: string }
+            | undefined;
+        const persistedPreset = typeof general?.activePreset === "string"
+            ? general.activePreset
+            : "";
+        const filter = jsonFilters?.find((candidate) => this.filterTargetsMatch(candidate));
+        const restored = filter
+            ? this.selectionFromFilter(filter, persistedPreset)
+            : null;
+
+        this.selection = restored?.selection ?? { type: "none" };
+        this.activePreset = restored?.preset ?? null;
+        this.dragAnchor = this.selection.type === "range" ? this.selection.start : null;
     }
 
-    private selectionFromFilter(filter: powerbi.IFilter): Selection | null {
-        const advanced = filter as unknown as {
-            conditions?: Array<{ operator?: string; value?: string | number }>;
-        };
-        if (advanced.conditions && advanced.conditions.length >= 2) {
-            const start = this.filterValueToDate(advanced.conditions[0].value);
-            const endExclusive = this.filterValueToDate(advanced.conditions[1].value);
-            if (start && endExclusive) {
-                return { type: "range", start, end: addDays(endExclusive, -1) };
+    private filterTargetsMatch(filter: powerbi.IFilter): boolean {
+        if (!this.filterTarget) {
+            return false;
+        }
+        const target = (filter as unknown as {
+            target?: { table?: string; column?: string };
+        }).target;
+        return target?.table === this.filterTarget.table &&
+            target.column === this.filterTarget.column;
+    }
+
+    private selectionFromFilter(
+        filter: powerbi.IFilter,
+        persistedPreset: string
+    ): RestoredSelection | null {
+        const presetKeys = [
+            ...(persistedPreset ? [persistedPreset] : []),
+            ...PRESETS.map((preset) => preset.key).filter((key) => key !== persistedPreset)
+        ];
+        for (const key of presetKeys) {
+            const preset = presetByKey(key);
+            if (!preset || !this.filterTarget) {
+                continue;
+            }
+            const result = preset.compute({
+                now: startOfDay(new Date()),
+                fiscalStartMonth: this.fiscalStartMonth(),
+                weekStart: this.weekStart(),
+                target: this.filterTarget
+            });
+            if (this.filtersEquivalent(filter, result.filter)) {
+                return {
+                    selection: {
+                        type: "range",
+                        start: result.start,
+                        end: addDays(result.endExclusive, -1)
+                    },
+                    preset: key
+                };
             }
         }
-        const basic = filter as unknown as { values?: Array<string | number> };
-        if (basic.values && basic.values.length > 0) {
+
+        const advanced = filter as unknown as {
+            logicalOperator?: string;
+            conditions?: Array<{ operator?: string; value?: string | number }>;
+        };
+        if (advanced.logicalOperator === "And" && advanced.conditions?.length === 2) {
+            const lower = advanced.conditions.find(
+                (condition) => condition.operator === "GreaterThanOrEqual"
+            );
+            const upper = advanced.conditions.find(
+                (condition) => condition.operator === "LessThan" ||
+                    condition.operator === "LessThanOrEqual"
+            );
+            const start = this.filterValueToDate(lower?.value);
+            const upperDate = this.filterValueToDate(upper?.value);
+            if (start && upperDate) {
+                const end = upper?.operator === "LessThan"
+                    ? addDays(upperDate, -1)
+                    : upperDate;
+                if (start <= end) {
+                    return {
+                        selection: { type: "range", start, end },
+                        preset: null
+                    };
+                }
+            }
+        }
+        const basic = filter as unknown as {
+            operator?: string;
+            values?: Array<string | number>;
+        };
+        if (basic.operator === "In" && basic.values && basic.values.length > 0) {
             const days = basic.values
                 .map((v) => this.filterValueToDate(v))
                 .filter((d): d is Date => d !== null);
-            if (days.length > 0) {
-                return { type: "days", days };
+            if (days.length === basic.values.length) {
+                return {
+                    selection: { type: "days", days },
+                    preset: null
+                };
             }
         }
         return null;
+    }
+
+    private filtersEquivalent(left: powerbi.IFilter, right: powerbi.IFilter): boolean {
+        if (!this.filterTargetsMatch(left)) {
+            return false;
+        }
+        const a = left as unknown as Record<string, unknown>;
+        const b = right as unknown as Record<string, unknown>;
+        if ("timeUnitsCount" in a || "timeUnitsCount" in b) {
+            return a.operator === b.operator &&
+                a.timeUnitsCount === b.timeUnitsCount &&
+                a.timeUnitType === b.timeUnitType &&
+                a.includeToday === b.includeToday;
+        }
+        if (Array.isArray(a.conditions) || Array.isArray(b.conditions)) {
+            return a.logicalOperator === b.logicalOperator &&
+                JSON.stringify(a.conditions) === JSON.stringify(b.conditions);
+        }
+        return a.operator === b.operator &&
+            JSON.stringify(a.values) === JSON.stringify(b.values);
     }
 
     private filterValueToDate(value: string | number | undefined): Date | null {
@@ -398,7 +522,15 @@ export class Visual implements IVisual {
             // parseDateWithoutTimezone (tuned for the UTC "...Z" form) would.
             const naive = /^(\d{4})-(\d{2})-(\d{2})(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?)?$/.exec(value);
             if (naive) {
-                return new Date(Number(naive[1]), Number(naive[2]) - 1, Number(naive[3]));
+                const year = Number(naive[1]);
+                const month = Number(naive[2]) - 1;
+                const day = Number(naive[3]);
+                const parsed = new Date(year, month, day);
+                return parsed.getFullYear() === year &&
+                    parsed.getMonth() === month &&
+                    parsed.getDate() === day
+                    ? parsed
+                    : null;
             }
             const parsed = parseDateWithoutTimezone(value);
             return isNaN(parsed.getTime()) ? null : startOfDay(parsed);
@@ -426,11 +558,14 @@ export class Visual implements IVisual {
     }
 
     private defaultFocusDate(): Date {
-        if (this.selection.type === "range") {
+        if (this.selection.type === "range" && this.isWithinVisibleRange(this.selection.start)) {
             return this.selection.start;
         }
         if (this.selection.type === "days") {
-            return this.selection.days[0];
+            const visibleDay = this.selection.days.find((day) => this.isWithinVisibleRange(day));
+            if (visibleDay) {
+                return visibleDay;
+            }
         }
         const today = startOfDay(new Date());
         if (this.visible &&
@@ -525,6 +660,7 @@ export class Visual implements IVisual {
             this.toggleDay(date);
             this.dragAnchor = null;
             this.applySelection();
+            this.persistVisibleMonth();
             this.renderCalendar();
             return;
         }
@@ -532,6 +668,7 @@ export class Visual implements IVisual {
         if (event.shiftKey && this.dragAnchor) {
             this.selection = this.rangeBetween(this.dragAnchor, date);
             this.applySelection();
+            this.persistVisibleMonth();
             this.renderCalendar();
             return;
         }
@@ -547,9 +684,28 @@ export class Visual implements IVisual {
         if (!this.isDragging || !this.dragAnchor) {
             return;
         }
+        if (this.focusedDate && isSameDay(this.focusedDate, date)) {
+            return;
+        }
         this.selection = this.rangeBetween(this.dragAnchor, date);
         this.focusedDate = date;
         this.renderCalendar();
+    }
+
+    private onRootPointerMove(event: PointerEvent): void {
+        if (!this.isDragging) {
+            return;
+        }
+        const direct = event.target instanceof Element
+            ? event.target.closest<HTMLElement>(".cs-day")
+            : null;
+        const hit = direct ?? document.elementFromPoint?.(event.clientX, event.clientY)
+            ?.closest<HTMLElement>(".cs-day");
+        const date = hit?.dataset.key ? this.dateFromDayKey(hit.dataset.key) : null;
+        if (date && !this.isDateDisabled(date)) {
+            event.preventDefault();
+            this.onDayPointerEnter(date);
+        }
     }
 
     private endDrag(): void {
@@ -558,6 +714,7 @@ export class Visual implements IVisual {
         }
         this.isDragging = false;
         this.applySelection();
+        this.persistVisibleMonth();
     }
 
     private toggleDay(date: Date): void {
@@ -599,16 +756,20 @@ export class Visual implements IVisual {
      * without scrolling the whole range on every step.
      */
     private ensureVisible(date: Date): void {
-        if (!this.visible) {
-            return;
-        }
-        const start = makeDate(this.visible.year, this.visible.month, 1);
-        const end = addMonths(start, this.monthsToShow());
-        const d = startOfDay(date);
-        if (d >= start && d < end) {
+        if (this.isWithinVisibleRange(date)) {
             return;
         }
         this.moveVisibleTo(date);
+    }
+
+    private isWithinVisibleRange(date: Date): boolean {
+        if (!this.visible) {
+            return false;
+        }
+        const start = makeDate(this.visible.year, this.visible.month, 1);
+        const end = addMonths(start, this.monthsToShow());
+        const day = startOfDay(date);
+        return day >= start && day < end;
     }
 
     private navigateMonths(delta: number): void {
@@ -634,7 +795,7 @@ export class Visual implements IVisual {
     }
 
     private selectFocused(event: KeyboardEvent): void {
-        if (!this.focusedDate) {
+        if (!this.focusedDate || this.isDateDisabled(this.focusedDate)) {
             return;
         }
         this.activePreset = null;
@@ -648,6 +809,7 @@ export class Visual implements IVisual {
             this.selection = { type: "range", start: this.focusedDate, end: this.focusedDate };
         }
         this.applySelection();
+        this.persistVisibleMonth();
         this.renderCalendar();
     }
 
@@ -713,6 +875,7 @@ export class Visual implements IVisual {
     }
 
     private renderCalendar(): void {
+        const focus = this.captureFocus();
         this.clear();
         if (!this.visible) {
             return;
@@ -725,17 +888,47 @@ export class Visual implements IVisual {
         const months = this.monthsToShow();
         if (months <= 1) {
             this.root.appendChild(this.buildGrid(this.visible.year, this.visible.month, false));
+        } else {
+            const container = document.createElement("div");
+            container.className = "cs-months";
+            const first = makeDate(this.visible.year, this.visible.month, 1);
+            for (let i = 0; i < months; i++) {
+                const m = addMonths(first, i);
+                container.appendChild(this.buildGrid(m.getFullYear(), m.getMonth(), true));
+            }
+            this.root.appendChild(container);
+        }
+        this.restoreFocus(focus);
+    }
+
+    private captureFocus(): FocusSnapshot | null {
+        const active = document.activeElement;
+        if (!(active instanceof HTMLElement) || !this.root.contains(active)) {
+            return null;
+        }
+        if (active.classList.contains("cs-day")) {
+            return { kind: "day" };
+        }
+        if (active instanceof HTMLButtonElement) {
+            return {
+                kind: "button",
+                controlId: active.dataset.focusId
+            };
+        }
+        return null;
+    }
+
+    private restoreFocus(snapshot: FocusSnapshot | null): void {
+        if (!snapshot) {
             return;
         }
-
-        const container = document.createElement("div");
-        container.className = "cs-months";
-        const first = makeDate(this.visible.year, this.visible.month, 1);
-        for (let i = 0; i < months; i++) {
-            const m = addMonths(first, i);
-            container.appendChild(this.buildGrid(m.getFullYear(), m.getMonth(), true));
+        if (snapshot.kind === "day") {
+            this.focusActiveCell();
+            return;
         }
-        this.root.appendChild(container);
+        const button = Array.from(this.root.querySelectorAll<HTMLButtonElement>("button.cs-btn"))
+            .find((candidate) => candidate.dataset.focusId === snapshot.controlId);
+        button?.focus();
     }
 
     private buildPresets(): HTMLElement {
@@ -745,7 +938,12 @@ export class Visual implements IVisual {
         bar.setAttribute("aria-label", this.localize("Aria_Presets", "Relative date presets"));
         for (const preset of PRESETS) {
             const label = this.localize(preset.labelKey, preset.label);
-            const btn = this.button(label, label, () => this.applyPreset(preset.key));
+            const btn = this.button(
+                label,
+                label,
+                () => this.applyPreset(preset.key),
+                `preset:${preset.key}`
+            );
             if (this.activePreset === preset.key) {
                 btn.classList.add("active");
                 btn.setAttribute("aria-pressed", "true");
@@ -766,12 +964,14 @@ export class Visual implements IVisual {
         nav.appendChild(this.button(
             "\u2039",
             this.localize("Nav_PrevMonth", "Previous month"),
-            () => this.navigateMonths(-1)
+            () => this.navigateMonths(-1),
+            "nav:previous"
         ));
         nav.appendChild(this.button(
             "\u203A",
             this.localize("Nav_NextMonth", "Next month"),
-            () => this.navigateMonths(1)
+            () => this.navigateMonths(1),
+            "nav:next"
         ));
         bar.appendChild(nav);
 
@@ -785,23 +985,31 @@ export class Visual implements IVisual {
         actions.appendChild(this.button(
             this.localize("Nav_Today", "Today"),
             this.localize("Nav_Today", "Today"),
-            () => this.goToToday()
+            () => this.goToToday(),
+            "nav:today"
         ));
         actions.appendChild(this.button(
             this.localize("Nav_Clear", "Clear"),
             this.localize("Nav_Clear", "Clear"),
-            () => this.clearSelection()
+            () => this.clearSelection(),
+            "nav:clear"
         ));
         bar.appendChild(actions);
         return bar;
     }
 
-    private button(label: string, ariaLabel: string, onClick: () => void): HTMLButtonElement {
+    private button(
+        label: string,
+        ariaLabel: string,
+        onClick: () => void,
+        focusId: string
+    ): HTMLButtonElement {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "cs-btn";
         btn.textContent = label;
         btn.setAttribute("aria-label", ariaLabel);
+        btn.dataset.focusId = focusId;
         if (this.interactive) {
             btn.addEventListener("click", onClick);
         } else {
@@ -919,7 +1127,7 @@ export class Visual implements IVisual {
             );
         }
 
-        const noData = heatmap.datesWithDataOnly.value && this.hasValues && !hasData && !this.dataTruncated;
+        const noData = this.isDateDisabled(cell.date);
         if (noData) {
             day.classList.add("no-data");
             day.setAttribute("aria-disabled", "true");
@@ -962,6 +1170,14 @@ export class Visual implements IVisual {
         const el = this.root.querySelector<HTMLElement>(`.cs-day[data-key="${key}"]:not(.other-month)`)
             ?? this.root.querySelector<HTMLElement>(`.cs-day[data-key="${key}"]`);
         el?.focus();
+    }
+
+    private isDateDisabled(date: Date): boolean {
+        const heatmap = this.formattingSettings.heatmapCard;
+        return heatmap.datesWithDataOnly.value &&
+            this.hasValues &&
+            !this.dataValues.has(this.dayKey(date)) &&
+            !this.dataTruncated;
     }
 
     private onContextMenu(event: MouseEvent): void {
@@ -1076,6 +1292,22 @@ export class Visual implements IVisual {
 
     private dayKey(date: Date): string {
         return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+    }
+
+    private dateFromDayKey(key: string): Date | null {
+        const match = /^(-?\d+)-(\d+)-(\d+)$/.exec(key);
+        if (!match) {
+            return null;
+        }
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        const day = Number(match[3]);
+        const date = makeDate(year, month, day);
+        return date.getFullYear() === year &&
+            date.getMonth() === month &&
+            date.getDate() === day
+            ? date
+            : null;
     }
 
     private localize(key: string, fallback: string): string {
