@@ -38,8 +38,7 @@ async function main() {
     const sourceCommit = git("rev-parse", "HEAD");
     const workingTreeClean = git(
         "status",
-        "--porcelain",
-        "--untracked-files=no"
+        "--porcelain"
     ) === "";
     const certification = certificationState(sourceCommit);
 

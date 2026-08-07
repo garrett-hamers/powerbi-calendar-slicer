@@ -67,5 +67,16 @@ describe("offline sample PBIP", () => {
             name: "calendarSlicerATLYN606CC6AF684C4BBA",
             type: "CustomVisual"
         }));
+        expect(existsSync(resolve(
+            root,
+            "samples/AtlynSample.Report/CustomVisuals/" +
+            "calendarSlicerATLYN606CC6AF684C4BBA/package.json"
+        ))).toBe(true);
+        expect(existsSync(resolve(
+            root,
+            "samples/AtlynSample.Report/CustomVisuals/" +
+            "calendarSlicerATLYN606CC6AF684C4BBA/resources/" +
+            "calendarSlicerATLYN606CC6AF684C4BBA.pbiviz.json"
+        ))).toBe(true);
     });
 });

@@ -348,26 +348,32 @@ describe("Atlyn Calendar Slicer visual", () => {
     });
 
     it("restores a RelativeDateFilter using persisted preset state", () => {
-        const { visual, element } = createVisual();
-        const dataView = buildMockDataView({
-            dates: [new Date(2024, 2, 1), new Date(2024, 2, 31)],
-            objects: { general: { activePreset: "last7" } }
-        });
-        const relative = {
-            target: { table: "Calendar", column: "Date" },
-            operator: 0,
-            timeUnitsCount: 7,
-            timeUnitType: 0,
-            includeToday: true
-        };
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(2024, 2, 15, 12));
+        try {
+            const { visual, element } = createVisual();
+            const dataView = buildMockDataView({
+                dates: [new Date(2024, 2, 1), new Date(2024, 2, 31)],
+                objects: { general: { activePreset: "last7" } }
+            });
+            const relative = {
+                target: { table: "Calendar", column: "Date" },
+                operator: 0,
+                timeUnitsCount: 7,
+                timeUnitType: 0,
+                includeToday: true
+            };
 
-        visual.update(updateOptions(dataView, [relative]));
+            visual.update(updateOptions(dataView, [relative]));
 
-        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(7);
-        const active = Array.from(
-            element.querySelectorAll<HTMLButtonElement>(".cs-presets .cs-btn")
-        ).find((button) => button.textContent === "Last 7 Days");
-        expect(active?.getAttribute("aria-pressed")).toBe("true");
+            expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(7);
+            const active = Array.from(
+                element.querySelectorAll<HTMLButtonElement>(".cs-presets .cs-btn")
+            ).find((button) => button.textContent === "Last 7 Days");
+            expect(active?.getAttribute("aria-pressed")).toBe("true");
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it("navigates to the next month when the next button is clicked", () => {

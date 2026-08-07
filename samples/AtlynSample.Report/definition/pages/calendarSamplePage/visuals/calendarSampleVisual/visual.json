@@ -63,7 +63,7 @@
             "monthsToShow": {
               "expr": {
                 "Literal": {
-                  "Value": "2D"
+                  "Value": "2L"
                 }
               }
             }
