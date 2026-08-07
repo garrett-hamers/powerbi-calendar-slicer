@@ -14,10 +14,16 @@ table CalendarData
 		summarizeBy: sum
 		sourceColumn: [Value]
 
+	column Tooltip
+		dataType: string
+		summarizeBy: none
+		sourceColumn: [Tooltip]
+
 	partition CalendarData = calculated
 		mode: import
 		source =
 				ADDCOLUMNS(
 				    CALENDAR(DATE(2025, 1, 1), DATE(2026, 12, 31)),
-				    "Value", DAY([Date]) * 10
+				    "Value", DAY([Date]) * 10,
+				    "Tooltip", "Day " & FORMAT([Date], "d")
 				)

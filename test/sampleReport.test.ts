@@ -31,7 +31,7 @@ describe("offline sample PBIP", () => {
         expect(reportVersion.version).toBe("2.0.0");
     });
 
-    it("binds the real Date and Values roles to an offline calculated table", () => {
+    it("binds Date, Values, and Tooltips roles to an offline calculated table", () => {
         const visual = readJson<{
             visual: {
                 visualType: string;
@@ -48,10 +48,21 @@ describe("offline sample PBIP", () => {
 
         expect(visual.visual.visualType).toBe("calendarSlicerATLYN606CC6AF684C4BBA");
         expect(Object.keys(visual.visual.query.queryState).sort()).toEqual([
-            "Date", "Values"
+            "Date", "Tooltips", "Values"
+        ]);
+        const tooltipState = visual.visual.query.queryState.Tooltips as {
+            projections: Array<{ queryRef: string; nativeQueryRef: string }>;
+        };
+        expect(tooltipState.projections).toEqual([
+            expect.objectContaining({
+                queryRef: "CalendarData.Tooltip",
+                nativeQueryRef: "Tooltip"
+            })
         ]);
         expect(table).toContain("partition CalendarData = calculated");
         expect(table).toContain("CALENDAR(DATE(2025, 1, 1), DATE(2026, 12, 31))");
+        expect(table).toContain('column Tooltip');
+        expect(table).toContain('"Tooltip", "Day " & FORMAT([Date], "d")');
         expect(table).not.toMatch(/\b(?:dataSource|expression)\b/i);
         expect(existsSync(resolve(
             root,

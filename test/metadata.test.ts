@@ -39,8 +39,8 @@ describe("submission metadata", () => {
         expect(pbiviz.visual.guid).toBe("calendarSlicerATLYN606CC6AF684C4BBA");
         expect(pbiviz.visual.name).toBe("atlynCalendarSlicer");
         expect(pbiviz.visual.displayName).toBe("Atlyn Calendar Slicer");
-        expect(pbiviz.visual.version).toBe("1.0.0.6");
-        expect(pbiviz.version).toBe("1.0.0.6");
+        expect(pbiviz.visual.version).toBe("1.0.0.7");
+        expect(pbiviz.version).toBe("1.0.0.7");
         expect(pbiviz.apiVersion).toBe("5.11.1");
         expect(pbiviz.visual.supportUrl)
             .toBe("https://github.com/garrett-hamers/powerbi-calendar-slicer/issues");
@@ -57,7 +57,7 @@ describe("submission metadata", () => {
         expect(resources.Selection_Range).toBe("Selected from {0} through {1}");
 
         expect(packageJson.name).toBe("calendar-slicer-visual");
-        expect(packageJson.version).toBe("1.0.0.6");
+        expect(packageJson.version).toBe("1.0.0.7");
         expect(packageJson.private).toBe(true);
     });
 
@@ -70,6 +70,11 @@ describe("submission metadata", () => {
             supportsEmptyDataView?: boolean;
             suppressDefaultTitle?: boolean;
             dataRoles: Array<{ name: string; kind: string }>;
+            tooltips?: {
+                supportedTypes: { default: boolean; canvas: boolean };
+                roles: string[];
+                supportEnhancedTooltips?: boolean;
+            };
             dataViewMappings: Array<{
                 conditions: Array<Record<string, { min?: number; max?: number }>>;
                 categorical: {
@@ -93,11 +98,13 @@ describe("submission metadata", () => {
         const roles = new Map(capabilities.dataRoles.map((r) => [r.name, r.kind]));
         expect(roles.get("Date")).toBe("Grouping");
         expect(roles.get("Values")).toBe("Measure");
+        expect(roles.get("Tooltips")).toBe("GroupingOrMeasure");
 
         const mapping = capabilities.dataViewMappings[0];
         expect(mapping.conditions[0]).toMatchObject({
             Date: { min: 1, max: 1 },
-            Values: { min: 0, max: 1 }
+            Values: { min: 0, max: 1 },
+            Tooltips: { min: 0, max: 10 }
         });
         expect(mapping.categorical.categories.for).toEqual({ in: "Date" });
         // Data reduction must be high enough to keep multi-year daily date tables.
@@ -105,6 +112,14 @@ describe("submission metadata", () => {
             .toBe(30000);
         expect(mapping.categorical.values.select).toContainEqual({
             bind: { to: "Values" }
+        });
+        expect(mapping.categorical.values.select).toContainEqual({
+            for: { in: "Tooltips" }
+        });
+        expect(capabilities.tooltips).toEqual({
+            supportedTypes: { default: true, canvas: true },
+            roles: ["Tooltips"],
+            supportEnhancedTooltips: true
         });
         expect(capabilities.privileges).toEqual([]);
     });
@@ -180,7 +195,7 @@ describe("submission metadata", () => {
         }
         expect(gitignore).toContain("dist/");
         expect(gitignore).toContain(".tmp/");
-        expect(readme).toContain("calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.6.pbiviz");
+        expect(readme).toContain("calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.7.pbiviz");
         expect(readme).toContain("Power_BI-API_5.11.1");
         expect(readme).toContain("npm run certify");
         expect(readme).toContain("npm run release:artifact");
