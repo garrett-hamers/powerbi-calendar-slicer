@@ -41,7 +41,7 @@ Target WCAG 2.1 AA-compatible interaction within the Power BI host. Support full
 
 ## Constraints
 
-- Certification: `privileges` empty, `externalJS` null, no `fetch`, `XMLHttpRequest`, `WebSocket`, `innerHTML`, `eval`, `new Function`, dynamic `import()`, or `Math.random` in `src/`. `npm audit` clean at moderate and above.
+- Certification: `privileges` and `externalJS` empty, no `fetch`, `XMLHttpRequest`, `WebSocket`, `innerHTML`, `eval`, `new Function`, dynamic `import()`, or `Math.random` in `src/`. `npm audit` clean at moderate and above.
 - No date library is bundled; date math is hand-rolled to keep the audit surface and bundle minimal.
 - No hosted CI/CD. All validation runs locally via `npm run certify` (see AGENTS.md).
 - The visual GUID `calendarSlicerATLYN606CC6AF684C4BBA` is fixed and never regenerated.

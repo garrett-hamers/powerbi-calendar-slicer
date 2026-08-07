@@ -36,6 +36,12 @@ async function main() {
     const releaseDirectory = resolve("dist", "release");
     const releasePath = resolve(releaseDirectory, STOREFRONT_FILE);
     const sourceCommit = git("rev-parse", "HEAD");
+    const workingTreeClean = git(
+        "status",
+        "--porcelain",
+        "--untracked-files=no"
+    ) === "";
+    const certification = certificationState(sourceCommit);
 
     await mkdir(releaseDirectory, { recursive: true });
     await copyFile(packagePath, releasePath);
@@ -49,7 +55,16 @@ async function main() {
         outerSha256: hashes.outerSha256,
         embeddedContentSha256: hashes.embeddedContentSha256,
         sourceCommit,
-        certification: certificationState(sourceCommit)
+        workingTreeClean,
+        certification,
+        blockers: [
+            ...(workingTreeClean
+                ? []
+                : ["Tracked files differ from the recorded source commit."]),
+            ...(certification.matchesSourceCommit
+                ? []
+                : [`${CERTIFICATION_REF} does not match the recorded source commit.`])
+        ]
     };
     await writeFile(
         resolve(releaseDirectory, "release-manifest.json"),
