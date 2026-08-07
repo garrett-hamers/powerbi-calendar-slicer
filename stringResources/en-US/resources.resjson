@@ -3,6 +3,8 @@
     "Role_Date_Desc": "One concrete Date/DateTime column to filter the report by",
     "Role_Values": "Values",
     "Role_Values_Desc": "Optional measure used to heat-shade days by magnitude",
+    "Role_Tooltips": "Tooltips",
+    "Role_Tooltips_Desc": "Optional fields shown in native and report-page tooltips",
 
     "Card_Calendar": "Calendar",
     "Card_Cells": "Cells",

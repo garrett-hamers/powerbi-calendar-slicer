@@ -53,6 +53,24 @@
               "nativeQueryRef": "Sum of Value"
             }
           ]
+        },
+        "Tooltips": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CalendarData"
+                    }
+                  },
+                  "Property": "Tooltip"
+                }
+              },
+              "queryRef": "CalendarData.Tooltip",
+              "nativeQueryRef": "Tooltip"
+            }
+          ]
         }
       }
     },
