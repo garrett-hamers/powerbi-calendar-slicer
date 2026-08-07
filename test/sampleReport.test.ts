@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -38,8 +38,9 @@ describe("offline sample PBIP", () => {
                 query: { queryState: Record<string, unknown> };
             };
         }>(
-            "samples/AtlynSample.Report/definition/pages/calendarSamplePage/" +
-            "visuals/calendarSampleVisual/visual.json"
+            "samples/AtlynSample.Report/definition/pages/" +
+            "4c1a8e7b2d9f4063a5b7c8d0e1f23456/visuals/" +
+            "9b2d7f1a3c5e4860b4d6f8a0c2e13579/visual.json"
         );
         const table = readFileSync(
             resolve(root, "samples/AtlynSample.SemanticModel/definition/tables/CalendarData.tmdl"),
@@ -95,20 +96,25 @@ describe("offline sample PBIP", () => {
         const pages = readJson<{ pageOrder: string[] }>(
             "samples/AtlynSample.Report/definition/pages/pages.json"
         );
-        expect(pages.pageOrder).toEqual(["calendarSamplePage"]);
+        expect(pages.pageOrder).toEqual([
+            "4c1a8e7b2d9f4063a5b7c8d0e1f23456"
+        ]);
 
         const page = readJson<{ displayName: string }>(
-            "samples/AtlynSample.Report/definition/pages/calendarSamplePage/page.json"
+            "samples/AtlynSample.Report/definition/pages/" +
+            "4c1a8e7b2d9f4063a5b7c8d0e1f23456/page.json"
         );
         const visual = readFileSync(resolve(
             root,
-            "samples/AtlynSample.Report/definition/pages/calendarSamplePage/" +
-            "visuals/calendarSampleVisual/visual.json"
+            "samples/AtlynSample.Report/definition/pages/" +
+            "4c1a8e7b2d9f4063a5b7c8d0e1f23456/visuals/" +
+            "9b2d7f1a3c5e4860b4d6f8a0c2e13579/visual.json"
         ), "utf8");
         const guidance = readFileSync(resolve(
             root,
-            "samples/AtlynSample.Report/definition/pages/calendarSamplePage/" +
-            "visuals/6f62b451fe7e4ac4b77c35ab70fffa12/visual.json"
+            "samples/AtlynSample.Report/definition/pages/" +
+            "4c1a8e7b2d9f4063a5b7c8d0e1f23456/visuals/" +
+            "6f62b451fe7e4ac4b77c35ab70fffa12/visual.json"
         ), "utf8");
         expect(page.displayName).toContain("hints and tips");
         expect(visual).toContain("Hints: click a day");
@@ -121,5 +127,35 @@ describe("offline sample PBIP", () => {
         expect(guidance).toContain("Clear");
         expect(guidance).toContain("tooltip");
         expect(guidance).toContain("right-click a day");
+    });
+
+    it("uses Desktop-compatible IDs that match their PBIR directories", () => {
+        const idPattern = /^[0-9a-f]{32}$/;
+        const pagesRoot = resolve(
+            root,
+            "samples/AtlynSample.Report/definition/pages"
+        );
+        const pageDirectories = readdirSync(pagesRoot, { withFileTypes: true })
+            .filter((entry) => entry.isDirectory());
+
+        for (const pageDirectory of pageDirectories) {
+            expect(pageDirectory.name).toMatch(idPattern);
+            const pagePath = resolve(pagesRoot, pageDirectory.name);
+            const page = readJson<{ name: string }>(resolve(pagePath, "page.json"));
+            expect(page.name).toBe(pageDirectory.name);
+
+            const visualsRoot = resolve(pagePath, "visuals");
+            const visualDirectories = readdirSync(visualsRoot, { withFileTypes: true })
+                .filter((entry) => entry.isDirectory());
+            for (const visualDirectory of visualDirectories) {
+                expect(visualDirectory.name).toMatch(idPattern);
+                const visual = readJson<{ name: string }>(resolve(
+                    visualsRoot,
+                    visualDirectory.name,
+                    "visual.json"
+                ));
+                expect(visual.name).toBe(visualDirectory.name);
+            }
+        }
     });
 });
