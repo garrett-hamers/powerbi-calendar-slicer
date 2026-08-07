@@ -2,7 +2,7 @@
 
 A free, open-source Power BI custom visual that filters a report by a date column from a **real 7-column month grid** — not a horizontal timeline ribbon. Pick a single day, drag a date range, Ctrl-click individual days, or apply relative presets such as Month-to-Date, Year-to-Date, and Last 7 Days.
 
-![Power BI](https://img.shields.io/badge/Power_BI-API_5.11.0-yellow)
+![Power BI](https://img.shields.io/badge/Power_BI-API_5.11.1-yellow)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Version](https://img.shields.io/badge/Version-1.0.0.8-blue)
 
@@ -236,7 +236,7 @@ npm test
 
 ## Tech Stack
 
-- **Power BI Visuals host contract** 5.11.0 (`powerbi-visuals-api` typings 5.11.1)
+- **Power BI Visuals API** 5.11.1 (official packages emit host contract 5.11.0)
 - **TypeScript** with hand-rolled, timezone-safe date math (no date library)
 - Plain DOM rendering (no runtime charting dependency)
 - **Vitest** + happy-dom for testing

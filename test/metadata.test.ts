@@ -41,9 +41,7 @@ describe("submission metadata", () => {
         expect(pbiviz.visual.displayName).toBe("Atlyn Calendar Slicer");
         expect(pbiviz.visual.version).toBe("1.0.0.8");
         expect(pbiviz.version).toBe("1.0.0.8");
-        // Partner Center requires the exported host contract's patch component
-        // to remain zero even though the installed typings include patch fixes.
-        expect(pbiviz.apiVersion).toBe("5.11.0");
+        expect(pbiviz.apiVersion).toBe("5.11.1");
         expect(pbiviz.visual.supportUrl)
             .toBe("https://github.com/garrett-hamers/powerbi-calendar-slicer/issues");
         expect(pbiviz.author.name).toBe("Atlyn");
@@ -198,12 +196,20 @@ describe("submission metadata", () => {
         expect(gitignore).toContain("dist/");
         expect(gitignore).toContain(".tmp/");
         expect(readme).toContain("calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.8.pbiviz");
-        expect(readme).toContain("Power_BI-API_5.11.0");
+        expect(readme).toContain("Power_BI-API_5.11.1");
         expect(readme).toContain("npm run certify");
         expect(readme).toContain("npm run release:artifact");
         expect(readme).toContain("npm run sample:report");
         expect(license).toContain("MIT License");
         expect(license).toContain("Copyright (c) 2026 Atlyn");
+
+        const embedded = readJson<{ apiVersion: string }>(
+            "samples/AtlynSample.Report/CustomVisuals/" +
+            "calendarSlicerATLYN606CC6AF684C4BBA/resources/" +
+            "calendarSlicerATLYN606CC6AF684C4BBA.pbiviz.json"
+        );
+        // powerbi-visuals-api exports the major.minor.0 host contract.
+        expect(embedded.apiVersion).toBe("5.11.0");
     });
 
     it("keeps the visual source free of certification-blocked APIs", () => {

@@ -8,7 +8,7 @@
         "description": "Free calendar slicer for Power BI. Filter a report by one concrete Date/DateTime column from a real 7-column month grid: pick a single day, drag a range, Ctrl-click individual days, or apply relative presets such as MTD, YTD and Last 7 Days.",
         "supportUrl": "https://github.com/garrett-hamers/powerbi-calendar-slicer/issues"
     },
-    "apiVersion": "5.11.0",
+    "apiVersion": "5.11.1",
     "author": {
         "name": "Atlyn",
         "email": "atlyn.help@gmail.com"
