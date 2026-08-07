@@ -105,9 +105,21 @@ describe("offline sample PBIP", () => {
             "samples/AtlynSample.Report/definition/pages/calendarSamplePage/" +
             "visuals/calendarSampleVisual/visual.json"
         ), "utf8");
+        const guidance = readFileSync(resolve(
+            root,
+            "samples/AtlynSample.Report/definition/pages/calendarSamplePage/" +
+            "visuals/6f62b451fe7e4ac4b77c35ab70fffa12/visual.json"
+        ), "utf8");
         expect(page.displayName).toContain("hints and tips");
         expect(visual).toContain("Hints: click a day");
         expect(visual).toContain("hover for values");
         expect(visual).toContain("right-click for the context menu");
+        expect(guidance).toContain("Hints and tips");
+        expect(guidance).toContain("Bind one concrete Date or DateTime column");
+        expect(guidance).toContain("Click a day");
+        expect(guidance).toContain("presets");
+        expect(guidance).toContain("Clear");
+        expect(guidance).toContain("tooltip");
+        expect(guidance).toContain("right-click a day");
     });
 });
