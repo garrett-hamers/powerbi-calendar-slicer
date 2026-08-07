@@ -14,6 +14,7 @@
         "package": "pbiviz package --certification-audit",
         "hash:package": "node scripts/hash-pbiviz.mjs",
         "release:artifact": "node scripts/prepare-release.mjs",
+        "sample:report": "node scripts/generate-sample-report.mjs",
         "icon": "node scripts/generate-icon.mjs",
         "audit": "npm audit --audit-level=moderate",
         "eslint": "npx eslint . --ext .js,.jsx,.ts,.tsx",
@@ -21,7 +22,7 @@
         "typecheck": "tsc --noEmit",
         "test": "vitest run",
         "test:watch": "vitest",
-        "certify": "npm run audit && npm run eslint && npm run typecheck && npm run test && npm run package"
+        "certify": "npm run audit && npm run eslint && npm run typecheck && npm run test && npm run package && node scripts/generate-sample-report.mjs --check"
     },
     "dependencies": {
         "powerbi-models": "^2.0.1",

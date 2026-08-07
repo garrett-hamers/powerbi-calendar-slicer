@@ -114,6 +114,9 @@ npm run hash:package
 
 # Copy the exact storefront bytes and write their size and SHA-256 manifest
 npm run release:artifact
+
+# Refresh the PBIP's embedded visual after packaging
+npm run sample:report
 ```
 
 ---
@@ -157,7 +160,8 @@ manual handoff step:
 4. **Advance the review source.** Before resubmitting, fast-forward the lowercase
    `certification` branch to the exact source commit recorded in the release
    manifest. Microsoft requires that branch to match the submitted package.
-5. **Validate the sample.** Open the offline sample in Power BI Desktop, refresh
+5. **Validate the sample.** Run `npm run sample:report`, then open
+   `samples/AtlynSample.pbip` in Power BI Desktop, refresh
    it, save it as a public `.pbix`, reopen that exact `.pbix`, and upload it to
    Partner Center. A PBIX contains a binary Analysis Services model and must not
    be generated or hand-edited by repository scripts.
@@ -176,6 +180,7 @@ Automated tests run under Vitest with the happy-dom environment.
 |-------|----------|
 | Metadata | Identity, versions, capabilities roles/objects, toolchain, no hosted CI, banned APIs |
 | Package Hashing | Stable framed hash and structural-collision resistance |
+| Sample Report | Offline PBIP structure, field bindings, and embedded visual parity |
 | Date Math | TZ/DST-safe serialisation matrix, ISO week numbers, month-grid generation, fiscal offsets |
 | Date Filters | Half-open range interval, basic multi-day filter, relative-date presets |
 | Visual Integration | Landing/empty states, grid render, selection, filter application, ARIA, high contrast |

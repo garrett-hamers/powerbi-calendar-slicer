@@ -159,11 +159,15 @@ describe("submission metadata", () => {
         // The eslint script string is mandated verbatim by Microsoft certification.
         expect(packageJson.scripts.eslint).toBe("npx eslint . --ext .js,.jsx,.ts,.tsx");
         expect(packageJson.scripts.certify).toBe(
-            "npm run audit && npm run eslint && npm run typecheck && npm run test && npm run package"
+            "npm run audit && npm run eslint && npm run typecheck && npm run test && " +
+            "npm run package && node scripts/generate-sample-report.mjs --check"
         );
         expect(packageJson.scripts["hash:package"]).toBe("node scripts/hash-pbiviz.mjs");
         expect(packageJson.scripts["release:artifact"]).toBe(
             "node scripts/prepare-release.mjs"
+        );
+        expect(packageJson.scripts["sample:report"]).toBe(
+            "node scripts/generate-sample-report.mjs"
         );
         expect(packageJson.dependencies["powerbi-visuals-api"]).toBe("5.11.1");
         expect(packageJson.devDependencies["powerbi-visuals-tools"]).toBe("7.2.1");
@@ -180,6 +184,7 @@ describe("submission metadata", () => {
         expect(readme).toContain("Power_BI-API_5.11.1");
         expect(readme).toContain("npm run certify");
         expect(readme).toContain("npm run release:artifact");
+        expect(readme).toContain("npm run sample:report");
         expect(license).toContain("MIT License");
         expect(license).toContain("Copyright (c) 2026 Atlyn");
     });
