@@ -1,0 +1,30 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.7.0/schema.json",
+  "name": "hintsDataShape",
+  "position": {
+    "x": 48,
+    "y": 454,
+    "z": 0,
+    "height": 230,
+    "width": 1384,
+    "tabOrder": 3
+  },
+  "visual": {
+    "visualType": "textbox",
+    "objects": {
+      "general": [
+        {
+          "properties": {
+            "paragraphs": {
+              "expr": {
+                "Literal": {
+                  "Value": "'[{\"textRuns\":[{\"value\":\"Use a concrete date column\"}]},{\"textRuns\":[{\"value\":\"Bind one Date or DateTime column directly, not an automatic date hierarchy or numeric year level. Values is optional. This sample uses a calculated table with no external data source, credential, or gateway dependency.\"}]}]'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

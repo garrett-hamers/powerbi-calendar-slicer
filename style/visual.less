@@ -113,12 +113,16 @@
     }
 
     .cs-day {
-        display: block;
+        display: table-cell;
         width: 100%;
         min-height: 22px;
         line-height: 22px;
         cursor: pointer;
         border-radius: 3px;
+        // Keep ordinary vertical scrolling available on phones. The visual
+        // switches to a deliberate range-drag mode after a horizontal/diagonal
+        // threshold instead of cancelling every touch gesture.
+        touch-action: pan-y;
     }
 
     .cs-day.other-month {
@@ -142,6 +146,8 @@
     .cs-day.selected {
         background: #0078d4;
         color: #fff;
+        font-weight: 700;
+        box-shadow: inset 0 0 0 2px currentColor;
     }
 
     .cs-day:hover:not(.selected):not(.no-data) {
@@ -177,6 +183,26 @@
         text-align: center;
         padding: 12px;
         color: #666;
+    }
+
+    .cs-live {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    .cs-disclosure {
+        flex: 0 0 auto;
+        padding: 3px 6px;
+        color: #666;
+        font-size: 11px;
+        line-height: 1.3;
     }
 
     .cs-landing .cs-landing-title {

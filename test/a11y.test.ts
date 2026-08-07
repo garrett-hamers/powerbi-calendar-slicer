@@ -58,6 +58,7 @@ function focusedKey(element: HTMLElement): string | undefined {
 
 function pressKey(element: HTMLElement, key: string) {
     const focused = element.querySelector<HTMLElement>(".cs-day[tabindex='0']");
+    focused?.focus();
     (focused ?? element).dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
 }
 
@@ -98,7 +99,7 @@ describe("Atlyn Calendar Slicer accessibility", () => {
         expect(element.querySelectorAll(".cs-day[tabindex='0']").length).toBe(1);
     });
 
-    it("selects the focused day with Enter and clears with Escape", () => {
+    it("selects with Enter while Escape remains available to the host", () => {
         const { visual, element, applied } = mount();
         update(visual, marchData());
 
@@ -106,10 +107,72 @@ describe("Atlyn Calendar Slicer accessibility", () => {
         const merges = applied.filter((a) => a.action === 0 && a.filter);
         expect(merges.length).toBeGreaterThanOrEqual(1);
         expect(element.querySelector(".cs-day.selected")).not.toBeNull();
+        expect(document.activeElement).toBe(
+            element.querySelector(".cs-day[tabindex='0']")
+        );
 
         pressKey(element, "Escape");
         const removes = applied.filter((a) => a.action === 1);
-        expect(removes.length).toBeGreaterThanOrEqual(1);
+        expect(removes).toHaveLength(0);
+        expect(document.activeElement).toBe(
+            element.querySelector(".cs-day[tabindex='0']")
+        );
+    });
+
+    it("preserves focus when paging to another month", () => {
+        const { visual, element } = mount();
+        update(visual, marchData());
+
+        pressKey(element, "PageDown");
+
+        expect(document.activeElement).toBe(
+            element.querySelector(".cs-day[tabindex='0']")
+        );
+    });
+
+    it("reanchors the grid tab stop when a bookmark changes the visible month", () => {
+        const { visual, element } = mount();
+        update(visual, marchData());
+        pressKey(element, "ArrowRight");
+
+        update(visual, buildMockDataView({
+            dates: [new Date(2024, 2, 1), new Date(2024, 2, 31)],
+            objects: { general: { visibleYear: 2024, visibleMonth: 3 } }
+        }));
+
+        const focused = element.querySelector<HTMLElement>(".cs-day[tabindex='0']");
+        expect(focused).not.toBeNull();
+        expect(focused?.dataset.key?.startsWith("2024-3-")).toBe(true);
+    });
+
+    it("restores focus to the preset Today button rather than the toolbar Today button", () => {
+        const { visual, element } = mount();
+        update(visual, marchData());
+        const presetToday = element.querySelector<HTMLButtonElement>(
+            "button[data-focus-id='preset:today']"
+        )!;
+        presetToday.focus();
+        presetToday.click();
+
+        expect(document.activeElement).toBe(
+            element.querySelector("button[data-focus-id='preset:today']")
+        );
+    });
+
+    it("does not keyboard-select a date marked aria-disabled", () => {
+        const { visual, element, applied } = mount();
+        update(visual, buildMockDataView({
+            dates: [new Date(2024, 2, 15)],
+            values: [1],
+            objects: { heatmap: { datesWithDataOnly: true } }
+        }));
+
+        const focused = element.querySelector<HTMLElement>(".cs-day[tabindex='0']");
+        expect(focused?.getAttribute("aria-disabled")).toBe("true");
+        pressKey(element, "Enter");
+
+        expect(applied.filter((entry) => entry.action === 0)).toHaveLength(0);
+        expect(document.activeElement).toBe(focused);
     });
 
     it("does not paint inline cell colours in high-contrast mode", () => {

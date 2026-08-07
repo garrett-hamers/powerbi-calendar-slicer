@@ -2,12 +2,11 @@
  * Relative-date presets for the Atlyn Calendar Slicer.
  *
  * Each preset produces both a concrete window (used to highlight the grid) and
- * the filter to apply. Rolling windows (Last N Days / Last Month / Last Year)
- * use a RelativeDateFilter so they stay correct over time — including inside a
- * saved bookmark — instead of freezing to the date the preset was clicked.
- * To-date and fiscal presets (MTD / QTD / YTD / Last Quarter) have no clean
- * relative-unit representation, so they resolve to a half-open range computed
- * at apply time, with QTD/YTD/Last Quarter honouring the fiscal-year start.
+ * the filter to apply. Host-relative presets use a RelativeDateFilter so they
+ * stay correct over time — including inside a saved bookmark — instead of
+ * freezing to the date the preset was clicked. To-date, custom-week, and fiscal
+ * presets have no faithful relative-unit representation, so they resolve to a
+ * half-open range computed at apply time.
  */
 import { Filter, RelativeDateFilterTimeUnit, RelativeDateOperators } from "powerbi-models";
 import { buildRangeFilter, buildRelativeFilter, FilterTarget } from "./dateFilter";
@@ -67,18 +66,57 @@ function rollingDays(count: number, ctx: PresetContext): PresetResult {
     return { filter, start, endExclusive };
 }
 
+function relativeDays(
+    operator: RelativeDateOperators,
+    count: number,
+    includeToday: boolean,
+    start: Date,
+    endExclusive: Date,
+    ctx: PresetContext
+): PresetResult {
+    return {
+        filter: buildRelativeFilter(
+            {
+                operator,
+                count,
+                unit: RelativeDateFilterTimeUnit.Days,
+                includeToday
+            },
+            ctx.target
+        ),
+        start,
+        endExclusive
+    };
+}
+
 export const PRESETS: PresetDef[] = [
     {
         key: "today",
         labelKey: "Preset_Today",
         label: "Today",
-        compute: (ctx) => range(ctx.now, addDays(ctx.now, 1), ctx.target)
+        compute: (ctx) =>
+            relativeDays(
+                RelativeDateOperators.InThis,
+                1,
+                true,
+                ctx.now,
+                addDays(ctx.now, 1),
+                ctx
+            )
     },
     {
         key: "yesterday",
         labelKey: "Preset_Yesterday",
         label: "Yesterday",
-        compute: (ctx) => range(addDays(ctx.now, -1), ctx.now, ctx.target)
+        compute: (ctx) =>
+            relativeDays(
+                RelativeDateOperators.InLast,
+                1,
+                false,
+                addDays(ctx.now, -1),
+                ctx.now,
+                ctx
+            )
     },
     {
         key: "thisWeek",
@@ -86,6 +124,21 @@ export const PRESETS: PresetDef[] = [
         label: "This Week",
         compute: (ctx) => {
             const start = startOfWeek(ctx.now, ctx.weekStart);
+            if (ctx.weekStart === 0) {
+                return {
+                    filter: buildRelativeFilter(
+                        {
+                            operator: RelativeDateOperators.InThis,
+                            count: 1,
+                            unit: RelativeDateFilterTimeUnit.CalendarWeeks,
+                            includeToday: true
+                        },
+                        ctx.target
+                    ),
+                    start,
+                    endExclusive: addDays(start, 7)
+                };
+            }
             return range(start, addDays(start, 7), ctx.target);
         }
     },

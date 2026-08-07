@@ -5,6 +5,7 @@ import {
     buildMultiDayFilter,
     buildRangeFilter,
     buildRelativeFilter,
+    MAX_DISCRETE_DAYS,
     targetFromQueryName,
     FilterTarget
 } from "../src/dateFilter";
@@ -13,17 +14,40 @@ import { makeDate } from "../src/utils/dateMath";
 const target: FilterTarget = { table: "Calendar", column: "Date" };
 
 describe("targetFromQueryName", () => {
-    it("splits on the first dot into table + column", () => {
+    it("splits a concrete table + column path", () => {
         expect(targetFromQueryName("Calendar.Date")).toEqual({
             table: "Calendar",
             column: "Date"
         });
     });
 
-    it("keeps hierarchy levels in the column remainder", () => {
-        expect(targetFromQueryName("Calendar.Date Hierarchy.Date")).toEqual({
+    it("rejects hierarchy query names instead of deriving targets from captions", () => {
+        expect(targetFromQueryName("Calendar.Date Hierarchy.Date", "Renamed Date")).toBeNull();
+    });
+
+    it("rejects extra semantic path separators without relying on a hierarchy label", () => {
+        expect(targetFromQueryName("Calendar.Fiscal.Date")).toBeNull();
+    });
+
+    it("rejects case-insensitive hierarchy variants", () => {
+        expect(targetFromQueryName("Calendar.Date hIeRaRcHy.Month")).toBeNull();
+    });
+
+    it("ignores a localized or renamed display caption", () => {
+        expect(targetFromQueryName("Calendar.Date", "Datum")).toEqual({
             table: "Calendar",
-            column: "Date Hierarchy.Date"
+            column: "Date"
+        });
+    });
+
+    it("accepts legitimate identifiers containing the word hierarchy", () => {
+        expect(targetFromQueryName("HierarchyCalendar.Date")).toEqual({
+            table: "HierarchyCalendar",
+            column: "Date"
+        });
+        expect(targetFromQueryName("Calendar.DateHierarchy")).toEqual({
+            table: "Calendar",
+            column: "DateHierarchy"
         });
     });
 
@@ -60,6 +84,13 @@ describe("range filter", () => {
 });
 
 describe("multi-day basic filter", () => {
+    it("rejects an oversized discrete payload", () => {
+        const days = Array.from({ length: MAX_DISCRETE_DAYS + 1 }, (_, index) =>
+            makeDate(2024, 0, index + 1)
+        );
+        expect(() => buildMultiDayFilter(days, target)).toThrow(RangeError);
+    });
+
     it("uses In with de-duplicated, sorted naive-local values", () => {
         const f = buildMultiDayFilter(
             [makeDate(2024, 2, 15), makeDate(2024, 2, 1), makeDate(2024, 2, 15)],

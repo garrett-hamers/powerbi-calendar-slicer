@@ -40,21 +40,39 @@ import { addDays, serializeDate, serializeDateNaive, startOfDay } from "./utils/
 export type FilterTarget = IFilterColumnTarget;
 
 /**
- * Derive a column filter target from a categorical column `queryName`. Power BI
- * query names are `Table.Column` (or `Table.Hierarchy.Level`); the table is the
- * part before the first dot, the column is the remainder.
+ * Maximum number of discrete values accepted by the BasicFilter path. A
+ * contiguous selection remains an AdvancedFilter regardless of its size; only
+ * Ctrl/⌘-click conversion to a discrete list is bounded.
  */
-export function targetFromQueryName(queryName: string): FilterTarget | null {
+export const MAX_DISCRETE_DAYS = 5000;
+
+/**
+ * Derive a concrete column filter target from the semantic query name emitted
+ * by Power BI. Display captions are intentionally ignored: captions can be
+ * localized or renamed and are not valid filter targets.
+ */
+export function targetFromQueryName(
+    queryName: string,
+    _columnDisplayName?: string
+): FilterTarget | null {
     if (!queryName) {
         return null;
     }
     const dot = queryName.indexOf(".");
-    if (dot <= 0 || dot === queryName.length - 1) {
+    const column = queryName.slice(dot + 1);
+    // A concrete column query name has exactly one semantic separator
+    // (`Table.Column`). Extra separators represent a hierarchy/path level, even
+    // when Power BI does not spell the word "Hierarchy" in the query name.
+    if (dot <= 0 || dot === queryName.length - 1 ||
+        column.includes(".")) {
+        return null;
+    }
+    if (!column) {
         return null;
     }
     return {
         table: queryName.slice(0, dot),
-        column: queryName.slice(dot + 1)
+        column
     };
 }
 
@@ -89,6 +107,11 @@ export function buildDayFilter(day: Date, target: FilterTarget): AdvancedFilter 
  * that matches nothing — see the module header and serializeDateNaive.
  */
 export function buildMultiDayFilter(days: Date[], target: FilterTarget): BasicFilter {
+    if (days.length > MAX_DISCRETE_DAYS) {
+        throw new RangeError(
+            `A discrete date selection cannot contain more than ${MAX_DISCRETE_DAYS} days`
+        );
+    }
     const seen = new Set<string>();
     const values: string[] = [];
     for (const day of days) {

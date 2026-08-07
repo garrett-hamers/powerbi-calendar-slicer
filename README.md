@@ -2,9 +2,9 @@
 
 A free, open-source Power BI custom visual that filters a report by a date column from a **real 7-column month grid** — not a horizontal timeline ribbon. Pick a single day, drag a date range, Ctrl-click individual days, or apply relative presets such as Month-to-Date, Year-to-Date, and Last 7 Days.
 
-![Power BI](https://img.shields.io/badge/Power_BI-API_5.11-yellow)
+![Power BI](https://img.shields.io/badge/Power_BI-API_5.11.1-yellow)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Version](https://img.shields.io/badge/Version-1.0.0-blue)
+![Version](https://img.shields.io/badge/Version-1.0.0.7-blue)
 
 ---
 
@@ -22,8 +22,9 @@ A free, open-source Power BI custom visual that filters a report by a date colum
 - **Click-drag** or **Shift-click** applies a contiguous range.
 - **Ctrl / ⌘-click** toggles individual, non-contiguous days.
 - **Relative presets** (Today, Yesterday, This Week, Last 7/14/30 Days, MTD, QTD,
-  YTD, Last Month/Quarter/Year) stay correct over time instead of freezing to the
-  date a bookmark was saved.
+  YTD, Last Month/Quarter/Year) use Power BI relative filters where those
+  semantics are exact. Fiscal, to-date, and custom windows are fixed at the
+  time the button is applied and remain fixed when restored from a bookmark.
 - A visible **Clear** button removes the filter entirely.
 
 Ranges are applied as a **half-open interval** `[start, nextPeriodStart)` using
@@ -35,13 +36,15 @@ DST timezone, and a half-hour-offset timezone.
 ### Optional heat-shading
 - Bind an optional **Values** measure to shade each day by magnitude on a
   configurable low → high colour ramp, and optionally grey days that have no data.
+- Hover any day for a native Power BI tooltip with the full date and bound measure.
 - See **Known limits** for the slicer-sync trade-off of binding a measure.
 
 ### Accessible
 - `role="grid"` / `role="gridcell"`, `aria-selected`, and a per-day label
   ("March 15, 2024").
-- Full arrow-key navigation, Enter/Space to select, Esc to clear, visible focus
-  rings, and right-click context menus.
+- Full arrow-key navigation, Enter/Space to select, Delete/Backspace or the Clear
+  button to clear, visible focus rings, and right-click context menus. Escape is
+  intentionally left for Power BI host focus navigation.
 - High-contrast support via the host colour palette, and report-theme awareness.
 - Rendering lifecycle events (`renderingStarted` / `renderingFinished` /
   `renderingFailed`) are reported to the host.
@@ -49,7 +52,8 @@ DST timezone, and a half-hour-offset timezone.
 ### Localized
 - Field-well labels, format-pane cards/slices, and messages are localized through
   the host localization manager, with English strings in
-  `stringResources/en-US/resources.resjson`. Add a sibling locale folder to translate.
+  `stringResources/en-US/resources.resjson`. Missing host keys safely fall back to
+  these English values. Add a sibling locale folder to translate.
 
 ---
 
@@ -57,11 +61,13 @@ DST timezone, and a half-hour-offset timezone.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| **Date** | Grouping | ✅ | Date column (or a date-hierarchy level) to filter by |
+| **Date** | Grouping | ✅ | One concrete Date/DateTime column to filter by |
 | **Values** | Measure | | Optional measure used to heat-shade days by magnitude |
 
-Accepted **Date** columns are a `dateTime` column, or a `numeric` column at the
-`Year` / `Date` level of a date hierarchy. Anything else shows a landing message.
+Only a concrete `dateTime` Date/DateTime column is supported. Automatic numeric
+levels, date hierarchies, drill, sort, and matrix inputs are intentionally
+rejected because they require different semantic filter targets. Add the actual
+column to the Date bucket rather than a hierarchy level.
 
 ---
 
@@ -82,7 +88,7 @@ Accepted **Date** columns are a `dateTime` column, or a `numeric` column at the
 ### From a Locally Built Package
 1. Run `npm ci` and `npm run package`
 2. In Power BI Desktop → **File → Import → Power BI Visual**
-3. Select `dist/calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.1.pbiviz`
+3. Select `dist/calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.7.pbiviz`
 
 ### Development
 
@@ -106,6 +112,12 @@ npm run package
 
 # Report the timestamp-dependent outer hash and stable embedded-content hash
 npm run hash:package
+
+# Copy the exact storefront bytes and write their size and SHA-256 manifest
+npm run release:artifact
+
+# Refresh the PBIP's embedded visual after packaging
+npm run sample:report
 ```
 
 ---
@@ -135,19 +147,28 @@ is expected (Word Cloud has the same split), so the rename below is a required
 manual handoff step:
 
 1. **Build.** `npm run certify` (or `npm run package`) writes
-   `dist/calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.1.pbiviz` — `pbiviz` always
+   `dist/calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.7.pbiviz` — `pbiviz` always
    names the output `{guid}.{version}.pbiviz`.
 2. **Rename for the storefront.** Copy it to **`atlynCalendarSlicer.pbiviz`** to
    match `DownloadFileName` in the product catalogue, and upload it to the blob
-   path `visuals/calendar-slicer/1.0.0.1/atlynCalendarSlicer.pbiviz`. Renaming
+   path `visuals/calendar-slicer/1.0.0.7/atlynCalendarSlicer.pbiviz`. Renaming
    does not change the bytes, so the SHA-256 is unaffected.
-3. **Record the hash.** `npm run hash:package` produces the SHA-256 for the
-   Partner Center certification notes. The hash you submit must match the file in
-   blob storage **byte-for-byte** — compute it against the exact archive you
-   upload (recompute after any rebuild, since the outer ZIP hash is
-   timestamp-dependent).
+3. **Prepare exact upload bytes.** `npm run release:artifact` copies the package to
+   `dist/release/atlynCalendarSlicer.pbiviz` and writes its byte count, outer
+   SHA-256, embedded-content SHA-256, source commit, and certification-branch
+   commit to `dist/release/release-manifest.json`. Upload that exact copied file;
+   rebuilding changes the outer ZIP hash.
+4. **Advance the review source.** Before resubmitting, fast-forward the lowercase
+   `certification` branch to the exact source commit recorded in the release
+   manifest. Microsoft requires that branch to match the submitted package.
+5. **Validate the sample.** Run `npm run sample:report`, then open
+   `samples/AtlynSample.pbip` in Power BI Desktop, refresh
+   it, save it as a public `.pbix`, reopen that exact `.pbix`, and upload it to
+   Partner Center. A PBIX contains a binary Analysis Services model and must not
+   be generated or hand-edited by repository scripts.
 
-Keep the version pinned at `1.0.0.1` across `package.json`, `pbiviz.json`, and the
+Keep the version pinned at `1.0.0.7` across `package.json`, `package-lock.json`,
+`pbiviz.json`, and the
 blob path until a packaged-content change warrants a coordinated bump.
 
 ---
@@ -160,6 +181,7 @@ Automated tests run under Vitest with the happy-dom environment.
 |-------|----------|
 | Metadata | Identity, versions, capabilities roles/objects, toolchain, no hosted CI, banned APIs |
 | Package Hashing | Stable framed hash and structural-collision resistance |
+| Sample Report | Offline PBIP structure, field bindings, and embedded visual parity |
 | Date Math | TZ/DST-safe serialisation matrix, ISO week numbers, month-grid generation, fiscal offsets |
 | Date Filters | Half-open range interval, basic multi-day filter, relative-date presets |
 | Visual Integration | Landing/empty states, grid render, selection, filter application, ARIA, high contrast |
@@ -176,11 +198,18 @@ npm test
   one bound field at a time. When the optional **Values** measure is bound for
   heat-shading, Power BI disables *Sync slicers* across pages. Heat-shading is
   therefore opt-in (off by default); leave it off if you rely on synced slicers.
-- Very large date tables are reduced by the host to 30,000 rows before rendering,
-  which is enough for roughly 80 years of daily dates. If a table exceeds that cap
-  the received dates may be incomplete, so **Grey days without data** automatically
-  disables itself rather than mislabel real days as empty.
-- Relative presets are evaluated against the report's current date at render time.
+- Very large date tables are reduced by the host to at most 30,000 rows before
+  rendering. When the cap is reached, the visual discloses that the data may be
+  incomplete and disables **Grey days without data** rather than mislabelling
+  missing rows. Converting a contiguous range to Ctrl/⌘ discrete values is
+  bounded at 5,000 dates and announces the limit instead of sending a huge
+  filter payload.
+- Today, Yesterday, This Week (when using the host's Sunday week), and Last N
+  days/months/years use a host `RelativeDateFilter` and therefore roll with the
+  report clock. To-date, custom-week, and fiscal presets use a fixed half-open
+  range computed when applied; restoring a bookmark does not silently move that
+  saved window. Apply those presets again when a new clock-relative window is
+  desired.
 - **Non-contiguous multi-select serialisation.** Ctrl/⌘-click selections are applied
   as a `BasicFilter ("In")` whose values are naive local wall-clock strings
   (`2024-11-09T00:00:00`, no `Z`). Range selections use the UTC-relabelled half-open
@@ -198,15 +227,16 @@ npm test
   `options.jsonFilters` (plus `general.filter` and `filterState: true` on the
   visible-month/preset state) — the path Microsoft documents for filter visuals.
   Bookmarks work correctly; `registerOnSelectCallback` is intentionally not used.
-- **Tooltips.** Not implemented in v1. Even in heat-shading mode the day number and
-  cell shading convey the value; a native `tooltipService` hover is a candidate for
-  a future release rather than a certification requirement.
+- **Validation environments.** Automated tests cover the visual contract, but
+  Microsoft Desktop, Service, and mobile host behavior (especially semantic
+  filter application, context menus, touch scrolling, bookmarks, and host focus)
+  still requires manual validation in those products.
 
 ---
 
 ## Tech Stack
 
-- **Power BI Visuals API** 5.11.0
+- **Power BI Visuals API** 5.11.1
 - **TypeScript** with hand-rolled, timezone-safe date math (no date library)
 - Plain DOM rendering (no runtime charting dependency)
 - **Vitest** + happy-dom for testing

@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import powerbi from "powerbi-visuals-api";
 import { Visual } from "../src/visual";
 import { buildEmptyDataView, buildMockDataView } from "./helpers/mockDataView";
+import { addDays, serializeDate, serializeDateNaive } from "../src/utils/dateMath";
 
 import VisualConstructorOptions = powerbi.extensibility.visual.VisualConstructorOptions;
 import VisualUpdateOptions = powerbi.extensibility.visual.VisualUpdateOptions;
@@ -23,6 +24,21 @@ interface AppliedFilter {
 function createHost() {
     const applied: AppliedFilter[] = [];
     const persisted: unknown[] = [];
+    const contextMenus: unknown[][] = [];
+    const shownTooltips: unknown[] = [];
+    const movedTooltips: unknown[] = [];
+    const hiddenTooltips: unknown[] = [];
+    const createSelectionIdBuilder = () => {
+        let index = -1;
+        const builder = {
+            withCategory: (_category: unknown, categoryIndex: number) => {
+                index = categoryIndex;
+                return builder;
+            },
+            createSelectionId: () => ({ key: `date:${index}` })
+        };
+        return builder;
+    };
     const host = {
         locale: "en-US",
         colorPalette: {
@@ -36,9 +52,18 @@ function createHost() {
             renderingFailed: vi.fn()
         },
         createSelectionManager: () => ({
-            showContextMenu: vi.fn(),
+            showContextMenu: vi.fn((selectionId: unknown, position: unknown) => {
+                contextMenus.push([selectionId, position]);
+            }),
             registerOnSelectCallback: vi.fn()
         }),
+        createSelectionIdBuilder,
+        tooltipService: {
+            enabled: () => true,
+            show: (options: unknown) => shownTooltips.push(options),
+            move: (options: unknown) => movedTooltips.push(options),
+            hide: (options: unknown) => hiddenTooltips.push(options)
+        },
         createLocalizationManager: () => ({
             getDisplayName: (key: string) => key
         }),
@@ -54,15 +79,41 @@ function createHost() {
             persisted.push(instances);
         }
     };
-    return { host, applied, persisted };
+    return {
+        host,
+        applied,
+        persisted,
+        contextMenus,
+        shownTooltips,
+        movedTooltips,
+        hiddenTooltips
+    };
 }
 
 function createVisual() {
     const element = document.createElement("div");
     document.body.appendChild(element);
-    const { host, applied, persisted } = createHost();
+    const {
+        host,
+        applied,
+        persisted,
+        contextMenus,
+        shownTooltips,
+        movedTooltips,
+        hiddenTooltips
+    } = createHost();
     const visual = new Visual({ element, host } as unknown as VisualConstructorOptions);
-    return { visual, element, applied, persisted, host };
+    return {
+        visual,
+        element,
+        applied,
+        persisted,
+        host,
+        contextMenus,
+        shownTooltips,
+        movedTooltips,
+        hiddenTooltips
+    };
 }
 
 function updateOptions(dataView: unknown, jsonFilters: unknown[] = []) {
@@ -84,6 +135,36 @@ describe("Atlyn Calendar Slicer visual", () => {
         visual.update(updateOptions(buildEmptyDataView()));
         expect(element.querySelector(".cs-landing")).not.toBeNull();
         expect(element.querySelector(".cs-grid")).toBeNull();
+    });
+
+    it("rejects automatic numeric hierarchy levels", () => {
+        const { visual, element } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [2024, 2025],
+            dateType: "numeric",
+            dateQueryName: "Calendar.Date Hierarchy.Year"
+        })));
+        expect(element.querySelector(".cs-landing")?.textContent).toContain("hierarchies");
+        expect(element.querySelector(".cs-grid")).toBeNull();
+    });
+
+    it("rejects a DateTime hierarchy path without a literal hierarchy label", () => {
+        const { visual, element } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 1)],
+            dateQueryName: "Calendar.Fiscal.Date"
+        })));
+        expect(element.querySelector(".cs-landing")?.textContent).toContain("hierarchies");
+        expect(element.querySelector(".cs-grid")).toBeNull();
+    });
+
+    it("accepts concrete DateTime identifiers containing hierarchy text", () => {
+        const { visual, element } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 1)],
+            dateQueryName: "HierarchyCalendar.Date"
+        })));
+        expect(element.querySelector(".cs-grid")).not.toBeNull();
     });
 
     it("renders a 7-column month grid for a bound date column", () => {
@@ -212,6 +293,124 @@ describe("Atlyn Calendar Slicer visual", () => {
         expect(selected.length).toBe(6);
     });
 
+    it("reconciles bookmark A to B to clear in the same visual instance", () => {
+        const { visual, element } = createVisual();
+        const dataView = buildMockDataView({
+            dates: [new Date(2024, 2, 1), new Date(2024, 2, 31)]
+        });
+        const bookmarkA = {
+            target: { table: "Calendar", column: "Date" },
+            logicalOperator: "And",
+            conditions: [
+                { operator: "GreaterThanOrEqual", value: "2024-03-10T00:00:00.000Z" },
+                { operator: "LessThan", value: "2024-03-16T00:00:00.000Z" }
+            ]
+        };
+        const bookmarkB = {
+            target: { table: "Calendar", column: "Date" },
+            operator: "In",
+            values: ["2024-03-20T00:00:00", "2024-03-22T00:00:00"]
+        };
+
+        visual.update(updateOptions(dataView, [bookmarkA]));
+        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(6);
+
+        visual.update(updateOptions(dataView, [bookmarkB]));
+        expect(Array.from(element.querySelectorAll<HTMLElement>(".cs-day.selected"))
+            .map((day) => day.dataset.key)
+            .sort()).toEqual(["2024-2-20", "2024-2-22"]);
+
+        visual.update(updateOptions(dataView, []));
+        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(0);
+    });
+
+    it("preserves selection when an update omits jsonFilters", () => {
+        const { visual, element } = createVisual();
+        const dataView = buildMockDataView({
+            dates: [new Date(2024, 2, 1), new Date(2024, 2, 31)]
+        });
+        const filter = {
+            target: { table: "Calendar", column: "Date" },
+            operator: "In",
+            values: ["2024-03-10T00:00:00"]
+        };
+        visual.update(updateOptions(dataView, [filter]));
+        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(1);
+
+        const withoutFilters = updateOptions(dataView);
+        withoutFilters.jsonFilters = undefined;
+        visual.update(withoutFilters);
+
+        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(1);
+    });
+
+    it("preserves the bound model through resize updates without dataViews", () => {
+        const { visual, element } = createVisual();
+        const dataView = buildMockDataView({
+            dates: [new Date(2024, 2, 1), new Date(2024, 2, 31)]
+        });
+        visual.update(updateOptions(dataView));
+        const before = element.querySelector(".cs-grid");
+        visual.update({
+            type: 4,
+            viewport: { width: 640, height: 480 }
+        } as unknown as VisualUpdateOptions);
+        expect(before).not.toBeNull();
+        expect(element.querySelector(".cs-grid")).not.toBeNull();
+        expect(element.querySelector(".cs-landing")).toBeNull();
+    });
+
+    it("ignores inbound filters for a different target", () => {
+        const { visual, element } = createVisual();
+        const dataView = buildMockDataView({
+            dates: [new Date(2024, 2, 1), new Date(2024, 2, 31)]
+        });
+        const matching = {
+            target: { table: "Calendar", column: "Date" },
+            operator: "In",
+            values: ["2024-03-10T00:00:00"]
+        };
+        const unrelated = {
+            target: { table: "Sales", column: "OrderDate" },
+            operator: "In",
+            values: ["2024-03-20T00:00:00"]
+        };
+
+        visual.update(updateOptions(dataView, [matching]));
+        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(1);
+        visual.update(updateOptions(dataView, [unrelated]));
+        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(0);
+    });
+
+    it("restores a RelativeDateFilter using persisted preset state", () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(2024, 2, 15, 12));
+        try {
+            const { visual, element } = createVisual();
+            const dataView = buildMockDataView({
+                dates: [new Date(2024, 2, 1), new Date(2024, 2, 31)],
+                objects: { general: { activePreset: "last7" } }
+            });
+            const relative = {
+                target: { table: "Calendar", column: "Date" },
+                operator: 0,
+                timeUnitsCount: 7,
+                timeUnitType: 0,
+                includeToday: true
+            };
+
+            visual.update(updateOptions(dataView, [relative]));
+
+            expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(7);
+            const active = Array.from(
+                element.querySelectorAll<HTMLButtonElement>(".cs-presets .cs-btn")
+            ).find((button) => button.textContent === "Last 7 Days");
+            expect(active?.getAttribute("aria-pressed")).toBe("true");
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it("navigates to the next month when the next button is clicked", () => {
         const { visual, element } = createVisual();
         visual.update(updateOptions(buildMockDataView({ dates: [new Date(2024, 2, 15)] })));
@@ -266,6 +465,280 @@ describe("Atlyn Calendar Slicer visual", () => {
         expect(low!.style.background).not.toBe(high!.style.background);
     });
 
+    it("shows native date and measure tooltips for calendar cells", () => {
+        const {
+            visual,
+            element,
+            shownTooltips,
+            movedTooltips,
+            hiddenTooltips
+        } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 15)],
+            values: [1234],
+            valueDisplayName: "Revenue"
+        })));
+
+        const cell = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-15']")!;
+        for (const type of ["pointerenter", "pointermove", "pointerleave"]) {
+            const event = new Event(type, { bubbles: true });
+            Object.assign(event, { pointerType: "mouse", clientX: 20, clientY: 30 });
+            cell.dispatchEvent(event);
+        }
+
+        const shown = shownTooltips[0] as {
+            dataItems: Array<{ displayName: string; value: string }>;
+            coordinates: number[];
+            identities: unknown[];
+        };
+        expect(shown.coordinates).toEqual([20, 30]);
+        expect(shown.dataItems).toEqual([
+            { displayName: "Date", value: "Friday, March 15, 2024" },
+            { displayName: "Revenue", value: "1,234" }
+        ]);
+        expect(shown.identities).toHaveLength(1);
+        expect(movedTooltips).toHaveLength(1);
+        expect(hiddenTooltips).toEqual([{
+            isTouchEvent: false,
+            immediately: true
+        }]);
+    });
+
+    it("distinguishes a null measure from a real zero", () => {
+        const { visual, element } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 1), new Date(2024, 2, 15)],
+            values: [null, 0],
+            objects: {
+                heatmap: { show: true, datesWithDataOnly: true }
+            }
+        })));
+
+        const blank = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-1']");
+        const zero = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-15']");
+        expect(blank?.classList.contains("no-data")).toBe(true);
+        expect(zero?.classList.contains("no-data")).toBe(false);
+        expect(zero?.style.background).toContain("rgb");
+    });
+
+    it("extends a touch-compatible pointer range before applying it", () => {
+        const { visual, element, applied } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 1), new Date(2024, 2, 31)]
+        })));
+
+        const start = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-10']")!;
+        const down = new Event("pointerdown", { bubbles: true });
+        (down as unknown as { pointerType: string }).pointerType = "touch";
+        start.dispatchEvent(down);
+
+        const end = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-15']")!;
+        const move = new Event("pointermove", { bubbles: true });
+        (move as unknown as { pointerType: string }).pointerType = "touch";
+        end.dispatchEvent(move);
+        element.querySelector<HTMLElement>(".atlynCalendarSlicer")!
+            .dispatchEvent(new Event("pointerup", { bubbles: true }));
+
+        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(6);
+        const merges = applied.filter((entry) => entry.action === 0 && entry.filter);
+        const filter = merges.at(-1)?.filter as {
+            conditions: Array<{ value: string }>;
+        };
+        expect(filter.conditions.map((condition) => condition.value)).toEqual([
+            "2024-03-10T00:00:00.000Z",
+            "2024-03-16T00:00:00.000Z"
+        ]);
+    });
+
+    it("does not extend a touch range onto an aria-disabled day", () => {
+        const { visual, element, applied } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 10)],
+            values: [1],
+            objects: { heatmap: { datesWithDataOnly: true } }
+        })));
+
+        element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-10']")!
+            .dispatchEvent(new Event("pointerdown", { bubbles: true }));
+        element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-12']")!
+            .dispatchEvent(new Event("pointermove", { bubbles: true }));
+        element.querySelector<HTMLElement>(".atlynCalendarSlicer")!
+            .dispatchEvent(new Event("pointerup", { bubbles: true }));
+
+        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(1);
+        const filter = applied.filter((entry) => entry.action === 0).at(-1)?.filter as {
+            conditions: Array<{ value: string }>;
+        };
+        expect(filter.conditions.map((condition) => condition.value)).toEqual([
+            "2024-03-10T00:00:00.000Z",
+            "2024-03-11T00:00:00.000Z"
+        ]);
+    });
+
+    it("keeps vertical touch movement available for scrolling", () => {
+        const { visual, element, applied } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 10), new Date(2024, 2, 15)]
+        })));
+
+        const cell = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-10']")!;
+        const down = new Event("pointerdown", { bubbles: true });
+        Object.assign(down, { pointerType: "touch", clientX: 10, clientY: 10, pointerId: 1 });
+        cell.dispatchEvent(down);
+        const move = new Event("pointermove", { bubbles: true });
+        Object.assign(move, { pointerType: "touch", clientX: 10, clientY: 40, pointerId: 1 });
+        element.querySelector<HTMLElement>(".atlynCalendarSlicer")!.dispatchEvent(move);
+        const up = new Event("pointerup", { bubbles: true });
+        Object.assign(up, { pointerType: "touch", pointerId: 1 });
+        element.querySelector<HTMLElement>(".atlynCalendarSlicer")!.dispatchEvent(up);
+
+        expect(applied.filter((entry) => entry.action === 0)).toHaveLength(0);
+    });
+
+    it("owns a gesture by pointerId and ignores competing move/up/cancel events", () => {
+        const { visual, element, applied } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 10), new Date(2024, 2, 15)]
+        })));
+
+        const first = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-10']")!;
+        const down = new Event("pointerdown", { bubbles: true });
+        Object.assign(down, { pointerType: "mouse", pointerId: 1, button: 0 });
+        first.dispatchEvent(down);
+
+        const competing = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-15']")!;
+        const secondDown = new Event("pointerdown", { bubbles: true });
+        Object.assign(secondDown, { pointerType: "mouse", pointerId: 2, button: 0 });
+        competing.dispatchEvent(secondDown);
+        const secondEnter = new Event("pointerenter", { bubbles: true });
+        Object.assign(secondEnter, { pointerType: "mouse", pointerId: 2 });
+        competing.dispatchEvent(secondEnter);
+        const secondMove = new Event("pointermove", { bubbles: true });
+        Object.assign(secondMove, { pointerType: "mouse", pointerId: 2 });
+        competing.dispatchEvent(secondMove);
+        const secondCancel = new Event("pointercancel", { bubbles: true });
+        Object.assign(secondCancel, { pointerType: "mouse", pointerId: 2 });
+        element.querySelector<HTMLElement>(".atlynCalendarSlicer")!.dispatchEvent(secondCancel);
+        const secondUp = new Event("pointerup", { bubbles: true });
+        Object.assign(secondUp, { pointerType: "mouse", pointerId: 2 });
+        element.querySelector<HTMLElement>(".atlynCalendarSlicer")!.dispatchEvent(secondUp);
+
+        expect(applied.filter((entry) => entry.action === 0)).toHaveLength(0);
+        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(1);
+
+        const ownerUp = new Event("pointerup", { bubbles: true });
+        Object.assign(ownerUp, { pointerType: "mouse", pointerId: 1 });
+        element.querySelector<HTMLElement>(".atlynCalendarSlicer")!.dispatchEvent(ownerUp);
+        expect(applied.filter((entry) => entry.action === 0)).toHaveLength(1);
+        expect(element.querySelector(".cs-day[data-key='2024-2-15']")!
+            .classList.contains("selected")).toBe(false);
+    });
+
+    it("announces both endpoints after a range selection", () => {
+        const { visual, element } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 10), new Date(2024, 2, 15)]
+        })));
+
+        element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-10']")!
+            .dispatchEvent(new Event("pointerdown", { bubbles: true }));
+        element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-15']")!
+            .dispatchEvent(new Event("pointermove", { bubbles: true }));
+        element.querySelector<HTMLElement>(".atlynCalendarSlicer")!
+            .dispatchEvent(new Event("pointerup", { bubbles: true }));
+
+        const announcement = element.querySelector("#cs-live-status")?.textContent || "";
+        expect(announcement).toContain("March 10, 2024");
+        expect(announcement).toContain("March 15, 2024");
+    });
+
+    it("keeps a 5,000-day selection synchronized at the limit", () => {
+        const { visual, element, applied } = createVisual();
+        const start = new Date(2020, 0, 1);
+        const values = Array.from({ length: 4999 }, (_, index) =>
+            serializeDateNaive(addDays(start, index))
+        );
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2100, 0, 1)],
+            objects: { general: { visibleYear: 2100, visibleMonth: 0 } }
+        }), [{
+            target: { table: "Calendar", column: "Date" },
+            operator: "In",
+            values
+        }]));
+
+        const first = element.querySelector<HTMLElement>(".cs-day[data-key='2100-0-1']")!;
+        const addAtLimit = new Event("pointerdown", { bubbles: true });
+        Object.assign(addAtLimit, { ctrlKey: true, button: 0 });
+        first.dispatchEvent(addAtLimit);
+        expect(applied.filter((entry) => entry.action === 0)).toHaveLength(1);
+        expect(element.querySelector<HTMLElement>(".cs-day[data-key='2100-0-1']")
+            ?.classList.contains("selected")).toBe(true);
+        expect(element.querySelector("#cs-live-status")?.textContent)
+            .toContain("5,000");
+
+        const second = element.querySelector<HTMLElement>(".cs-day[data-key='2100-0-2']")!;
+        const overLimit = new Event("pointerdown", { bubbles: true });
+        Object.assign(overLimit, { ctrlKey: true, button: 0 });
+        second.dispatchEvent(overLimit);
+        expect(applied.filter((entry) => entry.action === 0)).toHaveLength(1);
+        expect(second.classList.contains("selected")).toBe(false);
+        expect(element.querySelector("#cs-live-status")?.textContent)
+            .toContain("5,000");
+    });
+
+    it("rejects toggling inside an oversized contiguous range", () => {
+        const { visual, element, applied } = createVisual();
+        const start = new Date(2020, 0, 1);
+        visual.update(updateOptions(buildMockDataView({
+            dates: [start],
+            objects: { general: { visibleYear: 2020, visibleMonth: 0 } }
+        }), [{
+            target: { table: "Calendar", column: "Date" },
+            logicalOperator: "And",
+            conditions: [
+                { operator: "GreaterThanOrEqual", value: serializeDate(start) },
+                { operator: "LessThan", value: serializeDate(addDays(start, 5001)) }
+            ]
+        }]));
+
+        const inside = element.querySelector<HTMLElement>(".cs-day[data-key='2020-0-2']")!;
+        expect(inside.classList.contains("selected")).toBe(true);
+        const toggle = new Event("pointerdown", { bubbles: true });
+        Object.assign(toggle, { ctrlKey: true, button: 0 });
+        inside.dispatchEvent(toggle);
+
+        expect(applied.filter((entry) => entry.action === 0)).toHaveLength(0);
+        expect(inside.classList.contains("selected")).toBe(true);
+        expect(element.querySelector("#cs-live-status")?.textContent)
+            .toContain("5,000");
+    });
+
+    it("uses data-point and empty-space SelectionIds without filtering on context menus", () => {
+        const { visual, element, applied, contextMenus } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 15)]
+        })));
+
+        const cell = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-15']")!;
+        const rightDown = new Event("pointerdown", { bubbles: true });
+        Object.assign(rightDown, { button: 2, pointerType: "mouse" });
+        cell.dispatchEvent(rightDown);
+        expect(applied).toHaveLength(0);
+
+        cell.dispatchEvent(new MouseEvent("contextmenu", {
+            bubbles: true,
+            clientX: 10,
+            clientY: 20
+        }));
+        expect(contextMenus[0]?.[0]).toEqual({ key: "date:0" });
+
+        const grid = element.querySelector<HTMLElement>(".cs-grid")!;
+        grid.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+        expect(contextMenus[1]?.[0]).toEqual({});
+        expect(applied).toHaveLength(0);
+    });
+
     it("greys days without data when 'dates with data only' is enabled", () => {
         const { visual, element } = createVisual();
         visual.update(updateOptions(buildMockDataView({
@@ -300,6 +773,7 @@ describe("Atlyn Calendar Slicer visual", () => {
         expect(day10).not.toBeNull();
         expect(day10!.classList.contains("no-data")).toBe(false);
         expect(day10!.getAttribute("aria-disabled")).toBeNull();
+        expect(element.querySelector(".cs-disclosure")?.textContent).toContain("30,000");
     });
 
     it("greys empty days when the category is comfortably below the cap", () => {
@@ -381,6 +855,15 @@ describe("Atlyn Calendar Slicer visual", () => {
         const root = element.querySelector<HTMLElement>(".atlynCalendarSlicer")!;
         expect(root.classList.contains("read-only")).toBe(false);
         expect(element.querySelectorAll(".cs-day[tabindex='0']").length).toBe(1);
+    });
+
+    it("cleans DOM and pointer listeners on destroy", () => {
+        const { visual, element } = createVisual();
+        visual.update(updateOptions(buildMockDataView({ dates: [new Date(2024, 2, 15)] })));
+        visual.destroy();
+        expect(element.querySelector(".atlynCalendarSlicer")?.childElementCount).toBe(0);
+        visual.update(updateOptions(buildMockDataView({ dates: [new Date(2024, 2, 15)] })));
+        expect(element.querySelector(".cs-grid")).toBeNull();
     });
 
     it("renders multiple month grids when monthsToShow > 1", () => {
