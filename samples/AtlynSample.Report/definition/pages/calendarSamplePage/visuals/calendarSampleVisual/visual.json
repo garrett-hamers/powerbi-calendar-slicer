@@ -5,7 +5,7 @@
     "x": 40,
     "y": 40,
     "z": 0,
-    "height": 800,
+    "height": 600,
     "width": 1400,
     "tabOrder": 0
   },
@@ -106,10 +106,17 @@
       "title": [
         {
           "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Atlyn Calendar Slicer offline sample'"
+                  "Value": "'Hints: click a day, drag or Shift-click a range, Ctrl-click/Command-click separate dates, hover for values, and right-click for the context menu'"
                 }
               }
             }

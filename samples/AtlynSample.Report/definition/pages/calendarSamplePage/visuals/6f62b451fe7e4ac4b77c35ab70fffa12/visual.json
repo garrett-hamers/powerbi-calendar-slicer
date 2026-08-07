@@ -1,0 +1,30 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.7.0/schema.json",
+  "name": "6f62b451fe7e4ac4b77c35ab70fffa12",
+  "position": {
+    "x": 40,
+    "y": 670,
+    "z": 1,
+    "height": 190,
+    "width": 1400,
+    "tabOrder": 1
+  },
+  "visual": {
+    "visualType": "textbox",
+    "objects": {
+      "general": [
+        {
+          "properties": {
+            "paragraphs": {
+              "expr": {
+                "Literal": {
+                  "Value": "'[{\"textRuns\":[{\"value\":\"Hints and tips\"}]},{\"textRuns\":[{\"value\":\"Bind one concrete Date or DateTime column; do not use an automatic hierarchy. Click a day, drag or Shift-click a range, or Ctrl-click/Command-click separate dates to filter the report. Use presets for common windows and Clear to remove the filter. Add Values for heat shading, hover a day for its date and value tooltip, and right-click a day for the native Power BI context menu.\"}]}]'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -95,23 +95,31 @@ describe("offline sample PBIP", () => {
         const pages = readJson<{ pageOrder: string[] }>(
             "samples/AtlynSample.Report/definition/pages/pages.json"
         );
-        expect(pages.pageOrder).toEqual(["calendarSamplePage", "hintsTipsPage"]);
+        expect(pages.pageOrder).toEqual(["calendarSamplePage"]);
 
-        const hintRoot = resolve(
-            root,
-            "samples/AtlynSample.Report/definition/pages/hintsTipsPage/visuals"
+        const page = readJson<{ displayName: string }>(
+            "samples/AtlynSample.Report/definition/pages/calendarSamplePage/page.json"
         );
-        const hintFiles = [
-            "hintsTitle",
-            "hintsSelection",
-            "hintsHostFeatures",
-            "hintsDataShape"
-        ].map((name) =>
-            readFileSync(resolve(hintRoot, name, "visual.json"), "utf8")
-        ).join("\n");
-        expect(hintFiles).toContain("hints and tips");
-        expect(hintFiles).toContain("Hover a day");
-        expect(hintFiles).toContain("Right-click a day");
-        expect(hintFiles).toContain("concrete date column");
+        const visual = readFileSync(resolve(
+            root,
+            "samples/AtlynSample.Report/definition/pages/calendarSamplePage/" +
+            "visuals/calendarSampleVisual/visual.json"
+        ), "utf8");
+        const guidance = readFileSync(resolve(
+            root,
+            "samples/AtlynSample.Report/definition/pages/calendarSamplePage/" +
+            "visuals/6f62b451fe7e4ac4b77c35ab70fffa12/visual.json"
+        ), "utf8");
+        expect(page.displayName).toContain("hints and tips");
+        expect(visual).toContain("Hints: click a day");
+        expect(visual).toContain("hover for values");
+        expect(visual).toContain("right-click for the context menu");
+        expect(guidance).toContain("Hints and tips");
+        expect(guidance).toContain("Bind one concrete Date or DateTime column");
+        expect(guidance).toContain("Click a day");
+        expect(guidance).toContain("presets");
+        expect(guidance).toContain("Clear");
+        expect(guidance).toContain("tooltip");
+        expect(guidance).toContain("right-click a day");
     });
 });
