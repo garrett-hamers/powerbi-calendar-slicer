@@ -1,0 +1,122 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.7.0/schema.json",
+  "name": "calendarSampleVisual",
+  "position": {
+    "x": 40,
+    "y": 40,
+    "z": 0,
+    "height": 800,
+    "width": 1400,
+    "tabOrder": 0
+  },
+  "visual": {
+    "visualType": "calendarSlicerATLYN606CC6AF684C4BBA",
+    "query": {
+      "queryState": {
+        "Date": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CalendarData"
+                    }
+                  },
+                  "Property": "Date"
+                }
+              },
+              "queryRef": "CalendarData.Date",
+              "nativeQueryRef": "Date"
+            }
+          ]
+        },
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Aggregation": {
+                  "Expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "CalendarData"
+                        }
+                      },
+                      "Property": "Value"
+                    }
+                  },
+                  "Function": 0
+                }
+              },
+              "queryRef": "Sum(CalendarData.Value)",
+              "nativeQueryRef": "Sum of Value"
+            }
+          ]
+        },
+        "Tooltips": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CalendarData"
+                    }
+                  },
+                  "Property": "Tooltip"
+                }
+              },
+              "queryRef": "CalendarData.Tooltip",
+              "nativeQueryRef": "Tooltip"
+            }
+          ]
+        }
+      }
+    },
+    "objects": {
+      "calendar": [
+        {
+          "properties": {
+            "monthsToShow": {
+              "expr": {
+                "Literal": {
+                  "Value": "2L"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "heatmap": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Atlyn Calendar Slicer offline sample'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

@@ -29,6 +29,7 @@ Avoid off-by-one date errors, timezone drift, inclusive range endpoints that dro
 - Represent dates exactly: one grid cell is one calendar day in the report's own terms.
 - Produce filters through the documented filter API and keep them correct across bookmarks, refresh, and the passage of time.
 - Preserve Power BI interaction conventions so the slicer behaves like a native slicer.
+- Use native Power BI tooltips to expose the full date and optional measure value.
 - Handle timezone, DST, and half-hour-offset locales through a single tested serialisation path.
 - Prefer reviewable, deterministic behavior over hidden automation; no network, no randomness.
 - Host-relative Last N presets roll with the report clock. Fiscal and to-date
@@ -41,7 +42,7 @@ Target WCAG 2.1 AA-compatible interaction within the Power BI host. Support full
 
 ## Constraints
 
-- Certification: `privileges` empty, `externalJS` null, no `fetch`, `XMLHttpRequest`, `WebSocket`, `innerHTML`, `eval`, `new Function`, dynamic `import()`, or `Math.random` in `src/`. `npm audit` clean at moderate and above.
+- Certification: `privileges` and `externalJS` empty, no `fetch`, `XMLHttpRequest`, `WebSocket`, `innerHTML`, `eval`, `new Function`, dynamic `import()`, or `Math.random` in `src/`. `npm audit` clean at moderate and above.
 - No date library is bundled; date math is hand-rolled to keep the audit surface and bundle minimal.
 - No hosted CI/CD. All validation runs locally via `npm run certify` (see AGENTS.md).
 - The visual GUID `calendarSlicerATLYN606CC6AF684C4BBA` is fixed and never regenerated.

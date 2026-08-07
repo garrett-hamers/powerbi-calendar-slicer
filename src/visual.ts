@@ -85,6 +85,7 @@ export class Visual implements IVisual {
     private readonly root: HTMLElement;
     private readonly host: IVisualHost;
     private readonly selectionManager: ISelectionManager;
+    private readonly tooltipService: powerbi.extensibility.ITooltipService | undefined;
     private readonly localizationManager: ILocalizationManager;
     private readonly formattingSettingsService: FormattingSettingsService;
     private readonly selectionIdBuilder: powerbi.visuals.ISelectionIdBuilder | null;
@@ -113,6 +114,7 @@ export class Visual implements IVisual {
     private dataMax: Date | null = null;
     /** Per-day aggregated measure values, keyed by day key. */
     private dataValues = new Map<string, number>();
+    private valueDisplayName = "Value";
     private valueMin = 0;
     private valueMax = 0;
     private hasValues = false;
@@ -158,6 +160,7 @@ export class Visual implements IVisual {
         this.host = options.host;
         this.locale = this.host.locale || "en-US";
         this.selectionManager = this.host.createSelectionManager();
+        this.tooltipService = this.host.tooltipService;
         this.localizationManager = this.host.createLocalizationManager();
         const hostWithSelectionBuilder = this.host as IVisualHost & {
             createSelectionIdBuilder?: () => powerbi.visuals.ISelectionIdBuilder;
@@ -337,6 +340,7 @@ export class Visual implements IVisual {
         this.dataMin = null;
         this.dataMax = null;
         this.dataValues.clear();
+        this.valueDisplayName = "Value";
         this.dataTruncated = false;
         this.hasValues = false;
         this.setSelection({ type: "none" });
@@ -371,6 +375,7 @@ export class Visual implements IVisual {
 
         const values = dataView?.categorical?.values?.[0];
         const measures = values?.values;
+        this.valueDisplayName = values?.source.displayName || "Value";
         this.hasValues = Array.isArray(measures) && measures.length > 0;
 
         for (let i = 0; i < raws.length; i++) {
@@ -1503,8 +1508,59 @@ export class Visual implements IVisual {
                 this.onDayPointerEnter(cell.date, e)
             );
         }
+        td.addEventListener("pointerenter", (event) => this.showTooltip(cell.date, event));
+        td.addEventListener("pointermove", (event) => this.moveTooltip(cell.date, event));
+        td.addEventListener("pointerleave", (event) => this.hideTooltip(event));
 
         return td;
+    }
+
+    private tooltipData(date: Date): powerbi.extensibility.VisualTooltipDataItem[] {
+        const items: powerbi.extensibility.VisualTooltipDataItem[] = [{
+            displayName: this.localize("Role_Date", "Date"),
+            value: this.dayLabel(date)
+        }];
+        const value = this.dataValues.get(this.dayKey(date));
+        if (value !== undefined) {
+            items.push({
+                displayName: this.valueDisplayName,
+                value: new Intl.NumberFormat(this.locale).format(value)
+            });
+        }
+        return items;
+    }
+
+    private showTooltip(date: Date, event: PointerEvent): void {
+        if (!this.tooltipService || event.pointerType === "touch") {
+            return;
+        }
+        const selectionId = this.dataPointIds.get(this.dayKey(date));
+        this.tooltipService.show({
+            coordinates: [event.clientX, event.clientY],
+            isTouchEvent: false,
+            dataItems: this.tooltipData(date),
+            identities: selectionId ? [selectionId] : []
+        });
+    }
+
+    private moveTooltip(date: Date, event: PointerEvent): void {
+        if (!this.tooltipService || event.pointerType === "touch") {
+            return;
+        }
+        const selectionId = this.dataPointIds.get(this.dayKey(date));
+        this.tooltipService.move({
+            coordinates: [event.clientX, event.clientY],
+            isTouchEvent: false,
+            dataItems: this.tooltipData(date),
+            identities: selectionId ? [selectionId] : []
+        });
+    }
+
+    private hideTooltip(event: PointerEvent): void {
+        this.tooltipService?.hide({
+            isTouchEvent: event.pointerType === "touch",
+            immediately: true
+        });
     }
 
     private focusActiveCell(): void {

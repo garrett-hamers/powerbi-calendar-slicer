@@ -2,9 +2,9 @@
 
 A free, open-source Power BI custom visual that filters a report by a date column from a **real 7-column month grid** — not a horizontal timeline ribbon. Pick a single day, drag a date range, Ctrl-click individual days, or apply relative presets such as Month-to-Date, Year-to-Date, and Last 7 Days.
 
-![Power BI](https://img.shields.io/badge/Power_BI-API_5.11-yellow)
+![Power BI](https://img.shields.io/badge/Power_BI-API_5.11.1-yellow)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Version](https://img.shields.io/badge/Version-1.0.0.5-blue)
+![Version](https://img.shields.io/badge/Version-1.0.0.7-blue)
 
 ---
 
@@ -36,6 +36,7 @@ DST timezone, and a half-hour-offset timezone.
 ### Optional heat-shading
 - Bind an optional **Values** measure to shade each day by magnitude on a
   configurable low → high colour ramp, and optionally grey days that have no data.
+- Hover any day for a native Power BI tooltip with the full date and bound measure.
 - See **Known limits** for the slicer-sync trade-off of binding a measure.
 
 ### Accessible
@@ -87,7 +88,7 @@ column to the Date bucket rather than a hierarchy level.
 ### From a Locally Built Package
 1. Run `npm ci` and `npm run package`
 2. In Power BI Desktop → **File → Import → Power BI Visual**
-3. Select `dist/calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.5.pbiviz`
+3. Select `dist/calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.7.pbiviz`
 
 ### Development
 
@@ -111,6 +112,12 @@ npm run package
 
 # Report the timestamp-dependent outer hash and stable embedded-content hash
 npm run hash:package
+
+# Copy the exact storefront bytes and write their size and SHA-256 manifest
+npm run release:artifact
+
+# Refresh the PBIP's embedded visual after packaging
+npm run sample:report
 ```
 
 ---
@@ -140,19 +147,27 @@ is expected (Word Cloud has the same split), so the rename below is a required
 manual handoff step:
 
 1. **Build.** `npm run certify` (or `npm run package`) writes
-   `dist/calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.5.pbiviz` — `pbiviz` always
+   `dist/calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.7.pbiviz` — `pbiviz` always
    names the output `{guid}.{version}.pbiviz`.
 2. **Rename for the storefront.** Copy it to **`atlynCalendarSlicer.pbiviz`** to
    match `DownloadFileName` in the product catalogue, and upload it to the blob
-   path `visuals/calendar-slicer/1.0.0.5/atlynCalendarSlicer.pbiviz`. Renaming
+   path `visuals/calendar-slicer/1.0.0.7/atlynCalendarSlicer.pbiviz`. Renaming
    does not change the bytes, so the SHA-256 is unaffected.
-3. **Record the hash.** `npm run hash:package` produces the SHA-256 for the
-   Partner Center certification notes. The hash you submit must match the file in
-   blob storage **byte-for-byte** — compute it against the exact archive you
-   upload (recompute after any rebuild, since the outer ZIP hash is
-   timestamp-dependent).
+3. **Prepare exact upload bytes.** `npm run release:artifact` copies the package to
+   `dist/release/atlynCalendarSlicer.pbiviz` and writes its byte count, outer
+   SHA-256, embedded-content SHA-256, source commit, and certification-branch
+   commit to `dist/release/release-manifest.json`. Upload that exact copied file;
+   rebuilding changes the outer ZIP hash.
+4. **Advance the review source.** Before resubmitting, fast-forward the lowercase
+   `certification` branch to the exact source commit recorded in the release
+   manifest. Microsoft requires that branch to match the submitted package.
+5. **Validate the sample.** Run `npm run sample:report`, then open
+   `samples/AtlynSample.pbip` in Power BI Desktop, refresh
+   it, save it as a public `.pbix`, reopen that exact `.pbix`, and upload it to
+   Partner Center. A PBIX contains a binary Analysis Services model and must not
+   be generated or hand-edited by repository scripts.
 
-Keep the version pinned at `1.0.0.5` across `package.json`, `package-lock.json`,
+Keep the version pinned at `1.0.0.7` across `package.json`, `package-lock.json`,
 `pbiviz.json`, and the
 blob path until a packaged-content change warrants a coordinated bump.
 
@@ -166,6 +181,7 @@ Automated tests run under Vitest with the happy-dom environment.
 |-------|----------|
 | Metadata | Identity, versions, capabilities roles/objects, toolchain, no hosted CI, banned APIs |
 | Package Hashing | Stable framed hash and structural-collision resistance |
+| Sample Report | Offline PBIP structure, field bindings, and embedded visual parity |
 | Date Math | TZ/DST-safe serialisation matrix, ISO week numbers, month-grid generation, fiscal offsets |
 | Date Filters | Half-open range interval, basic multi-day filter, relative-date presets |
 | Visual Integration | Landing/empty states, grid render, selection, filter application, ARIA, high contrast |
@@ -211,9 +227,6 @@ npm test
   `options.jsonFilters` (plus `general.filter` and `filterState: true` on the
   visible-month/preset state) — the path Microsoft documents for filter visuals.
   Bookmarks work correctly; `registerOnSelectCallback` is intentionally not used.
-- **Tooltips.** Not implemented in v1. Even in heat-shading mode the day number and
-  cell shading convey the value; a native `tooltipService` hover is a candidate for
-  a future release rather than a certification requirement.
 - **Validation environments.** Automated tests cover the visual contract, but
   Microsoft Desktop, Service, and mobile host behavior (especially semantic
   filter application, context menus, touch scrolling, bookmarks, and host focus)
@@ -223,7 +236,7 @@ npm test
 
 ## Tech Stack
 
-- **Power BI Visuals API** 5.11.0
+- **Power BI Visuals API** 5.11.1
 - **TypeScript** with hand-rolled, timezone-safe date math (no date library)
 - Plain DOM rendering (no runtime charting dependency)
 - **Vitest** + happy-dom for testing

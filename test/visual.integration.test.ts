@@ -25,6 +25,9 @@ function createHost() {
     const applied: AppliedFilter[] = [];
     const persisted: unknown[] = [];
     const contextMenus: unknown[][] = [];
+    const shownTooltips: unknown[] = [];
+    const movedTooltips: unknown[] = [];
+    const hiddenTooltips: unknown[] = [];
     const createSelectionIdBuilder = () => {
         let index = -1;
         const builder = {
@@ -55,6 +58,12 @@ function createHost() {
             registerOnSelectCallback: vi.fn()
         }),
         createSelectionIdBuilder,
+        tooltipService: {
+            enabled: () => true,
+            show: (options: unknown) => shownTooltips.push(options),
+            move: (options: unknown) => movedTooltips.push(options),
+            hide: (options: unknown) => hiddenTooltips.push(options)
+        },
         createLocalizationManager: () => ({
             getDisplayName: (key: string) => key
         }),
@@ -70,15 +79,41 @@ function createHost() {
             persisted.push(instances);
         }
     };
-    return { host, applied, persisted, contextMenus };
+    return {
+        host,
+        applied,
+        persisted,
+        contextMenus,
+        shownTooltips,
+        movedTooltips,
+        hiddenTooltips
+    };
 }
 
 function createVisual() {
     const element = document.createElement("div");
     document.body.appendChild(element);
-    const { host, applied, persisted, contextMenus } = createHost();
+    const {
+        host,
+        applied,
+        persisted,
+        contextMenus,
+        shownTooltips,
+        movedTooltips,
+        hiddenTooltips
+    } = createHost();
     const visual = new Visual({ element, host } as unknown as VisualConstructorOptions);
-    return { visual, element, applied, persisted, host, contextMenus };
+    return {
+        visual,
+        element,
+        applied,
+        persisted,
+        host,
+        contextMenus,
+        shownTooltips,
+        movedTooltips,
+        hiddenTooltips
+    };
 }
 
 function updateOptions(dataView: unknown, jsonFilters: unknown[] = []) {
@@ -348,26 +383,32 @@ describe("Atlyn Calendar Slicer visual", () => {
     });
 
     it("restores a RelativeDateFilter using persisted preset state", () => {
-        const { visual, element } = createVisual();
-        const dataView = buildMockDataView({
-            dates: [new Date(2024, 2, 1), new Date(2024, 2, 31)],
-            objects: { general: { activePreset: "last7" } }
-        });
-        const relative = {
-            target: { table: "Calendar", column: "Date" },
-            operator: 0,
-            timeUnitsCount: 7,
-            timeUnitType: 0,
-            includeToday: true
-        };
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(2024, 2, 15, 12));
+        try {
+            const { visual, element } = createVisual();
+            const dataView = buildMockDataView({
+                dates: [new Date(2024, 2, 1), new Date(2024, 2, 31)],
+                objects: { general: { activePreset: "last7" } }
+            });
+            const relative = {
+                target: { table: "Calendar", column: "Date" },
+                operator: 0,
+                timeUnitsCount: 7,
+                timeUnitType: 0,
+                includeToday: true
+            };
 
-        visual.update(updateOptions(dataView, [relative]));
+            visual.update(updateOptions(dataView, [relative]));
 
-        expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(7);
-        const active = Array.from(
-            element.querySelectorAll<HTMLButtonElement>(".cs-presets .cs-btn")
-        ).find((button) => button.textContent === "Last 7 Days");
-        expect(active?.getAttribute("aria-pressed")).toBe("true");
+            expect(element.querySelectorAll(".cs-day.selected")).toHaveLength(7);
+            const active = Array.from(
+                element.querySelectorAll<HTMLButtonElement>(".cs-presets .cs-btn")
+            ).find((button) => button.textContent === "Last 7 Days");
+            expect(active?.getAttribute("aria-pressed")).toBe("true");
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it("navigates to the next month when the next button is clicked", () => {
@@ -422,6 +463,45 @@ describe("Atlyn Calendar Slicer visual", () => {
         expect(low!.style.background).toContain("rgb");
         expect(high!.style.background).toContain("rgb");
         expect(low!.style.background).not.toBe(high!.style.background);
+    });
+
+    it("shows native date and measure tooltips for calendar cells", () => {
+        const {
+            visual,
+            element,
+            shownTooltips,
+            movedTooltips,
+            hiddenTooltips
+        } = createVisual();
+        visual.update(updateOptions(buildMockDataView({
+            dates: [new Date(2024, 2, 15)],
+            values: [1234],
+            valueDisplayName: "Revenue"
+        })));
+
+        const cell = element.querySelector<HTMLElement>(".cs-day[data-key='2024-2-15']")!;
+        for (const type of ["pointerenter", "pointermove", "pointerleave"]) {
+            const event = new Event(type, { bubbles: true });
+            Object.assign(event, { pointerType: "mouse", clientX: 20, clientY: 30 });
+            cell.dispatchEvent(event);
+        }
+
+        const shown = shownTooltips[0] as {
+            dataItems: Array<{ displayName: string; value: string }>;
+            coordinates: number[];
+            identities: unknown[];
+        };
+        expect(shown.coordinates).toEqual([20, 30]);
+        expect(shown.dataItems).toEqual([
+            { displayName: "Date", value: "Friday, March 15, 2024" },
+            { displayName: "Revenue", value: "1,234" }
+        ]);
+        expect(shown.identities).toHaveLength(1);
+        expect(movedTooltips).toHaveLength(1);
+        expect(hiddenTooltips).toEqual([{
+            isTouchEvent: false,
+            immediately: true
+        }]);
     });
 
     it("distinguishes a null measure from a real zero", () => {

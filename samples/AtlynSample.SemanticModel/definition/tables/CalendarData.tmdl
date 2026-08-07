@@ -1,0 +1,29 @@
+/// Offline calendar data used to demonstrate Atlyn Calendar Slicer.
+/// This calculated table has no external data source or credential dependency.
+table CalendarData
+
+	column Date
+		dataType: dateTime
+		formatString: "Long Date"
+		summarizeBy: none
+		sourceColumn: [Date]
+
+	column Value
+		dataType: int64
+		formatString: 0
+		summarizeBy: sum
+		sourceColumn: [Value]
+
+	column Tooltip
+		dataType: string
+		summarizeBy: none
+		sourceColumn: [Tooltip]
+
+	partition CalendarData = calculated
+		mode: import
+		source =
+				ADDCOLUMNS(
+				    CALENDAR(DATE(2025, 1, 1), DATE(2026, 12, 31)),
+				    "Value", DAY([Date]) * 10,
+				    "Tooltip", "Day " & FORMAT([Date], "d")
+				)
