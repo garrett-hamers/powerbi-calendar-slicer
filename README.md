@@ -2,9 +2,9 @@
 
 A free, open-source Power BI custom visual that filters a report by a date column from a **real 7-column month grid** — not a horizontal timeline ribbon. Pick a single day, drag a date range, Ctrl-click individual days, or apply relative presets such as Month-to-Date, Year-to-Date, and Last 7 Days.
 
-![Power BI](https://img.shields.io/badge/Power_BI-API_5.11.1-yellow)
+![Power BI](https://img.shields.io/badge/Power_BI-API_5.11.0-yellow)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Version](https://img.shields.io/badge/Version-1.0.0.7-blue)
+![Version](https://img.shields.io/badge/Version-1.0.0.8-blue)
 
 ---
 
@@ -88,7 +88,7 @@ column to the Date bucket rather than a hierarchy level.
 ### From a Locally Built Package
 1. Run `npm ci` and `npm run package`
 2. In Power BI Desktop → **File → Import → Power BI Visual**
-3. Select `dist/calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.7.pbiviz`
+3. Select `dist/calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.8.pbiviz`
 
 ### Development
 
@@ -147,11 +147,11 @@ is expected (Word Cloud has the same split), so the rename below is a required
 manual handoff step:
 
 1. **Build.** `npm run certify` (or `npm run package`) writes
-   `dist/calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.7.pbiviz` — `pbiviz` always
+   `dist/calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.8.pbiviz` — `pbiviz` always
    names the output `{guid}.{version}.pbiviz`.
 2. **Rename for the storefront.** Copy it to **`atlynCalendarSlicer.pbiviz`** to
    match `DownloadFileName` in the product catalogue, and upload it to the blob
-   path `visuals/calendar-slicer/1.0.0.7/atlynCalendarSlicer.pbiviz`. Renaming
+   path `visuals/calendar-slicer/1.0.0.8/atlynCalendarSlicer.pbiviz`. Renaming
    does not change the bytes, so the SHA-256 is unaffected.
 3. **Prepare exact upload bytes.** `npm run release:artifact` copies the package to
    `dist/release/atlynCalendarSlicer.pbiviz` and writes its byte count, outer
@@ -167,7 +167,7 @@ manual handoff step:
    Partner Center. A PBIX contains a binary Analysis Services model and must not
    be generated or hand-edited by repository scripts.
 
-Keep the version pinned at `1.0.0.7` across `package.json`, `package-lock.json`,
+Keep the version pinned at `1.0.0.8` across `package.json`, `package-lock.json`,
 `pbiviz.json`, and the
 blob path until a packaged-content change warrants a coordinated bump.
 
@@ -236,7 +236,7 @@ npm test
 
 ## Tech Stack
 
-- **Power BI Visuals API** 5.11.1
+- **Power BI Visuals host contract** 5.11.0 (`powerbi-visuals-api` typings 5.11.1)
 - **TypeScript** with hand-rolled, timezone-safe date math (no date library)
 - Plain DOM rendering (no runtime charting dependency)
 - **Vitest** + happy-dom for testing
