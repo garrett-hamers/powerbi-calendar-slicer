@@ -39,15 +39,15 @@ describe("submission metadata", () => {
         expect(pbiviz.visual.guid).toBe("calendarSlicerATLYN606CC6AF684C4BBA");
         expect(pbiviz.visual.name).toBe("atlynCalendarSlicer");
         expect(pbiviz.visual.displayName).toBe("Atlyn Calendar Slicer");
-        expect(pbiviz.visual.version).toBe("1.0.0.5");
-        expect(pbiviz.version).toBe("1.0.0.5");
-        expect(pbiviz.apiVersion).toBe("5.11.0");
+        expect(pbiviz.visual.version).toBe("1.0.0.6");
+        expect(pbiviz.version).toBe("1.0.0.6");
+        expect(pbiviz.apiVersion).toBe("5.11.1");
         expect(pbiviz.visual.supportUrl)
             .toBe("https://github.com/garrett-hamers/powerbi-calendar-slicer/issues");
         expect(pbiviz.author.name).toBe("Atlyn");
         expect(pbiviz.author.email).toBe("atlyn.help@gmail.com");
         // externalJS must be empty for certification.
-        expect(pbiviz.externalJS).toBeNull();
+        expect(pbiviz.externalJS).toEqual([]);
         expect(pbiviz.stringResources).toEqual([
             "stringResources/en-US/resources.resjson"
         ]);
@@ -57,7 +57,7 @@ describe("submission metadata", () => {
         expect(resources.Selection_Range).toBe("Selected from {0} through {1}");
 
         expect(packageJson.name).toBe("calendar-slicer-visual");
-        expect(packageJson.version).toBe("1.0.0.5");
+        expect(packageJson.version).toBe("1.0.0.6");
         expect(packageJson.private).toBe(true);
     });
 
@@ -162,7 +162,10 @@ describe("submission metadata", () => {
             "npm run audit && npm run eslint && npm run typecheck && npm run test && npm run package"
         );
         expect(packageJson.scripts["hash:package"]).toBe("node scripts/hash-pbiviz.mjs");
-        expect(packageJson.dependencies["powerbi-visuals-api"]).toBe("5.11.0");
+        expect(packageJson.scripts["release:artifact"]).toBe(
+            "node scripts/prepare-release.mjs"
+        );
+        expect(packageJson.dependencies["powerbi-visuals-api"]).toBe("5.11.1");
         expect(packageJson.devDependencies["powerbi-visuals-tools"]).toBe("7.2.1");
         expect(packageJson.devDependencies["eslint-plugin-powerbi-visuals"]).toBe("1.1.1");
         expect(packageJson.devDependencies.jszip).toBe("3.10.1");
@@ -173,9 +176,10 @@ describe("submission metadata", () => {
         }
         expect(gitignore).toContain("dist/");
         expect(gitignore).toContain(".tmp/");
-        expect(readme).toContain("calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.5.pbiviz");
-        expect(readme).toContain("Power_BI-API_5.11");
+        expect(readme).toContain("calendarSlicerATLYN606CC6AF684C4BBA.1.0.0.6.pbiviz");
+        expect(readme).toContain("Power_BI-API_5.11.1");
         expect(readme).toContain("npm run certify");
+        expect(readme).toContain("npm run release:artifact");
         expect(license).toContain("MIT License");
         expect(license).toContain("Copyright (c) 2026 Atlyn");
     });

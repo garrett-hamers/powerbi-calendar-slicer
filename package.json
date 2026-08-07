@@ -1,7 +1,7 @@
 {
     "name": "calendar-slicer-visual",
     "description": "Atlyn Calendar Slicer for Power BI",
-    "version": "1.0.0.5",
+    "version": "1.0.0.6",
     "private": true,
     "repository": {
         "type": "git",
@@ -13,6 +13,7 @@
         "start": "pbiviz start",
         "package": "pbiviz package --certification-audit",
         "hash:package": "node scripts/hash-pbiviz.mjs",
+        "release:artifact": "node scripts/prepare-release.mjs",
         "icon": "node scripts/generate-icon.mjs",
         "audit": "npm audit --audit-level=moderate",
         "eslint": "npx eslint . --ext .js,.jsx,.ts,.tsx",
@@ -24,7 +25,7 @@
     },
     "dependencies": {
         "powerbi-models": "^2.0.1",
-        "powerbi-visuals-api": "5.11.0",
+        "powerbi-visuals-api": "5.11.1",
         "powerbi-visuals-utils-formattingmodel": "7.1.0"
     },
     "devDependencies": {
@@ -40,8 +41,10 @@
         "vitest": "^4.0.18"
     },
     "overrides": {
-        "brace-expansion": "^5.0.8",
-        "@hono/node-server": "^2.0.12",
-        "uuid": "^11.1.1"
+        "brace-expansion": "5.0.9",
+        "fast-uri": "3.1.5",
+        "hono": "4.12.34",
+        "@hono/node-server": "2.0.12",
+        "uuid": "11.1.1"
     }
 }
