@@ -79,4 +79,28 @@ describe("offline sample PBIP", () => {
             "calendarSlicerATLYN606CC6AF684C4BBA.pbiviz.json"
         ))).toBe(true);
     });
+
+    it("includes in-report hints for selection, tooltips, and context menus", () => {
+        const pages = readJson<{ pageOrder: string[] }>(
+            "samples/AtlynSample.Report/definition/pages/pages.json"
+        );
+        expect(pages.pageOrder).toEqual(["calendarSamplePage", "hintsTipsPage"]);
+
+        const hintRoot = resolve(
+            root,
+            "samples/AtlynSample.Report/definition/pages/hintsTipsPage/visuals"
+        );
+        const hintFiles = [
+            "hintsTitle",
+            "hintsSelection",
+            "hintsHostFeatures",
+            "hintsDataShape"
+        ].map((name) =>
+            readFileSync(resolve(hintRoot, name, "visual.json"), "utf8")
+        ).join("\n");
+        expect(hintFiles).toContain("hints and tips");
+        expect(hintFiles).toContain("Hover a day");
+        expect(hintFiles).toContain("Right-click a day");
+        expect(hintFiles).toContain("concrete date column");
+    });
 });

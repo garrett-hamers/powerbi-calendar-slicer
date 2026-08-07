@@ -1,0 +1,30 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.7.0/schema.json",
+  "name": "hintsSelection",
+  "position": {
+    "x": 48,
+    "y": 190,
+    "z": 0,
+    "height": 230,
+    "width": 650,
+    "tabOrder": 1
+  },
+  "visual": {
+    "visualType": "textbox",
+    "objects": {
+      "general": [
+        {
+          "properties": {
+            "paragraphs": {
+              "expr": {
+                "Literal": {
+                  "Value": "'[{\"textRuns\":[{\"value\":\"Select and filter\"}]},{\"textRuns\":[{\"value\":\"Click a day for a single-date filter. Drag or Shift-click for a continuous range. Ctrl-click or Command-click to toggle separate dates. Use a preset for common relative windows, and use Clear to remove the filter.\"}]}]'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

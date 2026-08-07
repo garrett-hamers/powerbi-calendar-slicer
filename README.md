@@ -36,6 +36,7 @@ DST timezone, and a half-hour-offset timezone.
 ### Optional heat-shading
 - Bind an optional **Values** measure to shade each day by magnitude on a
   configurable low → high colour ramp, and optionally grey days that have no data.
+- Hover any day for a native Power BI tooltip with the full date and bound measure.
 - See **Known limits** for the slicer-sync trade-off of binding a measure.
 
 ### Accessible
@@ -226,9 +227,6 @@ npm test
   `options.jsonFilters` (plus `general.filter` and `filterState: true` on the
   visible-month/preset state) — the path Microsoft documents for filter visuals.
   Bookmarks work correctly; `registerOnSelectCallback` is intentionally not used.
-- **Tooltips.** Not implemented in v1. Even in heat-shading mode the day number and
-  cell shading convey the value; a native `tooltipService` hover is a candidate for
-  a future release rather than a certification requirement.
 - **Validation environments.** Automated tests cover the visual contract, but
   Microsoft Desktop, Service, and mobile host behavior (especially semantic
   filter application, context menus, touch scrolling, bookmarks, and host focus)

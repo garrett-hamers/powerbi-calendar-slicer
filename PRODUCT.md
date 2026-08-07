@@ -29,6 +29,7 @@ Avoid off-by-one date errors, timezone drift, inclusive range endpoints that dro
 - Represent dates exactly: one grid cell is one calendar day in the report's own terms.
 - Produce filters through the documented filter API and keep them correct across bookmarks, refresh, and the passage of time.
 - Preserve Power BI interaction conventions so the slicer behaves like a native slicer.
+- Use native Power BI tooltips to expose the full date and optional measure value.
 - Handle timezone, DST, and half-hour-offset locales through a single tested serialisation path.
 - Prefer reviewable, deterministic behavior over hidden automation; no network, no randomness.
 - Host-relative Last N presets roll with the report clock. Fiscal and to-date
